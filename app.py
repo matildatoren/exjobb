@@ -66,4 +66,4 @@ st.subheader("Intensive Therapies")
 st.dataframe(it)
 
 st.subheader("Motorical development")
-st.dataframe(mt)
+st.dataframe(md)
