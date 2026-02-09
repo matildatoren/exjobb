@@ -86,7 +86,6 @@ st.title("Survey Dashboard")
 st.metric("Totalt antal svar", len(intro))
 
 latest_ts = df_latest["latest_response"].iloc[0]
-st.subheader("Senaste svaret")
 st.metric(
     label="Senaste inkomna svar",
     value=latest_ts.strftime("%Y-%m-%d %H:%M")
