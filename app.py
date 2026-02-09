@@ -64,6 +64,13 @@ def load_rt_data():
     """
     return pd.read_sql(query, conn)
 
+def load_latest_response():
+    query = """
+        SELECT MAX(created_at) AS latest_response
+        FROM introductory
+    """
+    return pd.read_sql(query, conn)
+
 df = load_entries_over_time()
 users = load_user_data()
 intro = load_intro_data()
@@ -71,17 +78,30 @@ ht = load_ht_data()
 it = load_it_data()
 md = load_md_data()
 rt = load_rt_data()
-
+df_latest = load_latest_response()
 
 st.title("Survey Dashboard")
 
+
 st.metric("Totalt antal svar", len(intro))
+
+latest_ts = df_latest["latest_response"].iloc[0]
+st.subheader("Senaste svaret")
+st.metric(
+    label="Senaste inkomna svar",
+    value=latest_ts.strftime("%Y-%m-%d %H:%M")
+)
 
 st.subheader("Antal entries per dag")
 st.line_chart(
     df.set_index("date")["entries"]
 )
 
+df["cumulative_entries"] = df["entries"].cumsum()
+st.subheader("Totalt antal svar över tid (kumulativt)")
+st.line_chart(
+    df.set_index("date")["cumulative_entries"]
+)
 st.header("All tables displayed")
 st.subheader("Users")
 st.dataframe(users)
