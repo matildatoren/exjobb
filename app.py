@@ -71,6 +71,33 @@ def load_latest_response():
     """
     return pd.read_sql(query, conn)
 
+def load_story_status_highest_age():
+    query = """
+        WITH highest_age AS (
+            SELECT
+                introductory_id,
+                MAX(age) AS max_age
+            FROM motorical_development
+            GROUP BY introductory_id
+        )
+
+        SELECT
+            ha.introductory_id,
+            ha.max_age,
+            md.story,
+            CASE
+                WHEN md.story IS NULL OR md.story = '' THEN 'Nej'
+                ELSE 'Ja'
+            END AS filled_story_at_highest_age
+        FROM highest_age ha
+        JOIN motorical_development md
+            ON md.introductory_id = ha.introductory_id
+            AND md.age = ha.max_age
+        ORDER BY ha.introductory_id;
+    """
+    return pd.read_sql(query, conn)
+
+
 df = load_entries_over_time()
 users = load_user_data()
 intro = load_intro_data()
@@ -79,21 +106,30 @@ it = load_it_data()
 md = load_md_data()
 rt = load_rt_data()
 df_latest = load_latest_response()
+story_status = load_story_status_highest_age()
 
 st.title("Survey Dashboard")
 
+total = len(intro)
+filled = (story_status["filled_story_at_highest_age"] == "Ja").sum()
+not_filled = total - filled
 
-st.metric("Totalt antal svar", len(intro))
+col1, col2, col3 = st.columns(3)
+
+col1.metric("Totalt antal svar", total)
+col2.metric("Fyllt i sista sektionen", filled)
+col3.metric("Ej fyllt i sista sektionen", not_filled)
+
+progress = filled / total if total > 0 else 0
+st.progress(progress)
+
+st.caption(f"{progress:.0%} har fyllt i story på högsta age")
+
 
 latest_ts = df_latest["latest_response"].iloc[0]
 st.metric(
     label="Senaste inkomna svar",
     value=latest_ts.strftime("%Y-%m-%d %H:%M")
-)
-
-st.subheader("Antal entries per dag")
-st.line_chart(
-    df.set_index("date")["entries"]
 )
 
 df["cumulative_entries"] = df["entries"].cumsum()
