@@ -112,4 +112,4 @@ if __name__ == "__main__":
     
     for table_name, df in data.items():
         print(f"\n{table_name}: {df.shape}")
-        print(df.head(10))
+        print(df.head(0))
