@@ -38,6 +38,7 @@ class SurveyDatabase:
         query = """
         SELECT 
             id,
+            age,
             introductory_id,
             training_methods_therapies,
             devices,
@@ -76,6 +77,7 @@ class SurveyDatabase:
         SELECT 
             id,
             introductory_id,
+            age,
             gross_motor_development,
             fine_motor_development,
             motorical_impairments_lower,
@@ -112,4 +114,4 @@ if __name__ == "__main__":
     
     for table_name, df in data.items():
         print(f"\n{table_name}: {df.shape}")
-        print(df.head(0))
+        print(df.head(15))
