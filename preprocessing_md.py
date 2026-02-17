@@ -27,7 +27,7 @@ def sum_impairments(struct):
     return total
 
 
-def process_motorical_score_per_user_per_age(df: pl.DataFrame) -> pl.DataFrame:
+def process_motorical_score_1(df: pl.DataFrame) -> pl.DataFrame:
     
     gross_list = df["gross_motor_development"].to_list()
     fine_list = df["fine_motor_development"].to_list()
@@ -69,7 +69,7 @@ if __name__ == "__main__":
     # Use the home_training table from your loader
     motorical_dev = data["motorical_development"]
 
-    motor_score_table = process_motorical_score_per_user_per_age(motorical_dev)
+    motor_score_table = process_motorical_score_1(motorical_dev)
 
     print("\nMotorical score per introductory_id per age:\n")
     print(motor_score_table)
