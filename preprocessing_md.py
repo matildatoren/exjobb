@@ -28,7 +28,7 @@ def sum_impairments(struct):
 
 
 def process_motorical_score_per_user_per_age(df: pl.DataFrame) -> pl.DataFrame:
-
+    
     gross_list = df["gross_motor_development"].to_list()
     fine_list = df["fine_motor_development"].to_list()
     lower_list = df["motorical_impairments_lower"].to_list()
