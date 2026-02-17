@@ -1,12 +1,8 @@
-"""
-Database module for loading survey data into Polars DataFrames.
-"""
 import polars as pl
 from typing import Optional
 from connect_db import get_connection
 
 class SurveyDatabase:
-    """Handle database connections and data loading."""
     
     def __init__(self, conn: str):
         """
@@ -114,4 +110,4 @@ if __name__ == "__main__":
     
     for table_name, df in data.items():
         print(f"\n{table_name}: {df.shape}")
-        print(df.head(15))
+        print(df.head(5))
