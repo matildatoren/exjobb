@@ -5,11 +5,6 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score
 
-
-# ---------------------------------------------------
-# 1️⃣ Calculate delta motor score
-# ---------------------------------------------------
-
 def add_delta_motor_score(motor_df: pl.DataFrame) -> pl.DataFrame:
 
     motor_df = motor_df.sort(["introductory_id", "age"])
@@ -26,10 +21,6 @@ def add_delta_motor_score(motor_df: pl.DataFrame) -> pl.DataFrame:
     return motor_df
 
 
-# ---------------------------------------------------
-# 2️⃣ Prepare home training features (pivot wide)
-# ---------------------------------------------------
-
 def prepare_home_features(home_training_df: pl.DataFrame) -> pl.DataFrame:
 
     home_wide = (
@@ -45,10 +36,6 @@ def prepare_home_features(home_training_df: pl.DataFrame) -> pl.DataFrame:
     return home_wide
 
 
-# ---------------------------------------------------
-# 3️⃣ Build ML dataset
-# ---------------------------------------------------
-
 def build_ml_dataset(motor_df, home_df):
 
     motor_df = add_delta_motor_score(motor_df)
@@ -63,11 +50,6 @@ def build_ml_dataset(motor_df, home_df):
     df = df.filter(pl.col("delta_motor_score").is_not_null())
 
     return df
-
-
-# ---------------------------------------------------
-# 4️⃣ Train model
-# ---------------------------------------------------
 
 def train_model(polars_df):
 
@@ -92,7 +74,7 @@ def train_model(polars_df):
     n_estimators=200,
     random_state=42,
     verbose=1,
-    n_jobs=-1   # använder alla CPU-kärnor
+    n_jobs=-1  
 )
 
     model.fit(X_train, y_train)
