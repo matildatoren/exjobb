@@ -100,13 +100,13 @@ if __name__ == "__main__":
     from dataloader import load_data
     from connect_db import get_connection
 
-    from preprocessing_md import process_motorical_score_per_user_per_age
+    from preprocessing_md import process_motorical_score_1
     from preprocessing_ht import process_training_per_type_per_year
 
     conn = get_connection()
     data = load_data(conn)
 
-    motor_df = process_motorical_score_per_user_per_age(data["motorical_development"])
+    motor_df = process_motorical_score_1(data["motorical_development"])
     home_df = process_training_per_type_per_year(data["home_training"])
 
     ml_df = build_ml_dataset(motor_df, home_df)
