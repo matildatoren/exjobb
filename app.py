@@ -1,157 +1,284 @@
 import streamlit as st
 import pandas as pd
+import json
 
 from connect_db import get_connection
 
-st.set_page_config(page_title="Enkät-dashboard", layout="wide")
+st.set_page_config(page_title="CP Survey Dashboard", layout="wide")
 
 conn = get_connection()
 
-@st.cache_data
-def load_entries_over_time():
-    query = """
-        SELECT
-            DATE(created_at) AS date,
-            COUNT(*) AS entries
-        FROM introductory
-        GROUP BY DATE(created_at)
-        ORDER BY date
-    """
-    return pd.read_sql(query, conn)
+# ---------------------------
+# LOAD DATA
+# ---------------------------
+
+@st.cache_data(ttl=60)
+def load_data():
+    intro = pd.read_sql("SELECT * FROM introductory", conn)
+    ht = pd.read_sql("SELECT * FROM home_training", conn)
+    it = pd.read_sql("SELECT * FROM intensive_therapies", conn)
+    md = pd.read_sql("SELECT * FROM motorical_development", conn)
+    return intro, ht, it, md
 
 
-def load_user_data():
-    query = """
-        SELECT *
-        FROM users
-    """
-    return pd.read_sql(query, conn)
+intro, ht, it, md = load_data()
 
-def load_intro_data():
-    query = """
-        SELECT *
-        FROM introductory
-    """
-    return pd.read_sql(query, conn)
+# Merge GMFCS into motor table
+md = md.merge(
+    intro[["id", "gmfcs_lvl"]],
+    left_on="introductory_id",
+    right_on="id",
+    how="left"
+)
 
-def load_ht_data():
-    query = """
-        SELECT *
-        FROM home_training
-    """
-    return pd.read_sql(query, conn)
+# ---------------------------
+# SIDEBAR FILTERS
+# ---------------------------
+
+st.sidebar.header("Filters")
+
+gmfcs_options = sorted(intro["gmfcs_lvl"].dropna().unique())
+selected_gmfcs = st.sidebar.multiselect(
+    "GMFCS Level",
+    options=gmfcs_options,
+    default=gmfcs_options
+)
+
+child_options = sorted(intro["id"].unique())
+selected_children = st.sidebar.multiselect(
+    "Select Child",
+    options=child_options,
+    default=child_options
+)
+
+# Apply filters
+md_filtered = md[
+    (md["gmfcs_lvl"].isin(selected_gmfcs)) &
+    (md["introductory_id"].isin(selected_children))
+]
+
+# ---------------------------
+# HELPER FUNCTIONS
+# ---------------------------
+
+def milestone_count(df, column):
+    def count_milestones(x):
+        if isinstance(x, dict):
+            return len(x.get("milestones", []))
+        return 0
+
+    df = df.copy()
+    df["milestone_count"] = df[column].apply(count_milestones)
+    return df
 
 
-def load_it_data():
-    query = """
-        SELECT *
-        FROM intensive_therapies 
-    """
-    return pd.read_sql(query, conn)
+def impairment_sum(df, column):
+    def sum_impairments(x):
+        if isinstance(x, dict):
+            details = x.get("details", {})
+            if isinstance(details, dict):
+                return sum(
+                    v for v in details.values()
+                    if isinstance(v, (int, float))
+                )
+        return 0
+
+    df = df.copy()
+    df["impairment_sum"] = df[column].apply(sum_impairments)
+    return df
 
 
-def load_md_data():
-    query = """
-        SELECT *
-        FROM motorical_development
-    """
-    return pd.read_sql(query, conn)
+def top_milestones_by_age(df, column, age):
+    subset = df[df["age"] == age]
 
-def load_rt_data():
-    query = """
-        SELECT *
-        FROM refresh_tokens
-    """
-    return pd.read_sql(query, conn)
+    milestones = []
+    for item in subset[column]:
+        if isinstance(item, dict):
+            milestones.extend(item.get("milestones", []))
 
-def load_latest_response():
-    query = """
-        SELECT MAX(created_at) AS latest_response
-        FROM introductory
-    """
-    return pd.read_sql(query, conn)
+    if len(milestones) == 0:
+        return pd.DataFrame()
 
-def load_story_status_highest_age():
-    query = """
-        WITH highest_age AS (
-            SELECT
-                introductory_id,
-                MAX(age) AS max_age
-            FROM motorical_development
-            GROUP BY introductory_id
+    counts = pd.Series(milestones).value_counts().reset_index()
+    counts.columns = ["Milestone", "Count"]
+    return counts
+
+
+# ---------------------------
+# TABS
+# ---------------------------
+
+tab1, tab2, tab3, tab4 = st.tabs(
+    ["Overview", "Motor Development", "Training", "Raw Data"]
+)
+
+# =====================================================
+# OVERVIEW
+# =====================================================
+
+with tab1:
+
+    st.title("Survey Overview")
+
+    total = len(intro)
+    completed = intro["completed"].sum() if "completed" in intro else 0
+
+    col1, col2 = st.columns(2)
+    col1.metric("Total participants", total)
+    col2.metric("Completed surveys", completed)
+
+    st.subheader("Responses over time")
+
+    entries = intro.copy()
+    entries["date"] = pd.to_datetime(entries["created_at"]).dt.date
+    entries = entries.groupby("date").size().reset_index(name="count")
+    entries["cumulative"] = entries["count"].cumsum()
+
+    st.line_chart(entries.set_index("date")["cumulative"])
+
+
+# =====================================================
+# MOTOR DEVELOPMENT
+# =====================================================
+
+with tab2:
+
+    st.header("Motor Development")
+
+    if md_filtered.empty:
+        st.warning("No data available for selected filters.")
+    else:
+
+        # ---- GROSS ----
+        st.subheader("Gross Motor Milestones")
+
+        gross_df = milestone_count(md_filtered, "gross_motor_development")
+
+        gross_plot = (
+            gross_df
+            .groupby(["age", "introductory_id"])["milestone_count"]
+            .mean()
+            .reset_index()
         )
 
-        SELECT
-            ha.introductory_id,
-            ha.max_age,
-            md.story,
-            CASE
-                WHEN md.story IS NULL OR md.story = '' THEN 'Nej'
-                ELSE 'Ja'
-            END AS filled_story_at_highest_age
-        FROM highest_age ha
-        JOIN motorical_development md
-            ON md.introductory_id = ha.introductory_id
-            AND md.age = ha.max_age
-        ORDER BY ha.introductory_id;
-    """
-    return pd.read_sql(query, conn)
+        pivot_gross = gross_plot.pivot(
+            index="age",
+            columns="introductory_id",
+            values="milestone_count"
+        )
+
+        st.line_chart(pivot_gross)
+
+        # ---- FINE ----
+        st.subheader("Fine Motor Milestones")
+
+        fine_df = milestone_count(md_filtered, "fine_motor_development")
+
+        fine_plot = (
+            fine_df
+            .groupby(["age", "introductory_id"])["milestone_count"]
+            .mean()
+            .reset_index()
+        )
+
+        pivot_fine = fine_plot.pivot(
+            index="age",
+            columns="introductory_id",
+            values="milestone_count"
+        )
+
+        st.line_chart(pivot_fine)
+
+        # ---- IMPAIRMENTS ----
+        st.subheader("Impairments Severity (Sum of selected levels)")
+
+        col1, col2 = st.columns(2)
+
+        # LOWER
+        lower_df = impairment_sum(md_filtered, "motorical_impairments_lower")
+        lower_plot = (
+            lower_df
+            .groupby(["age", "introductory_id"])["impairment_sum"]
+            .mean()
+            .reset_index()
+            .pivot(index="age", columns="introductory_id", values="impairment_sum")
+        )
+
+        with col1:
+            st.markdown("**Lower Limb Severity**")
+            st.line_chart(lower_plot)
+
+        # UPPER
+        upper_df = impairment_sum(md_filtered, "motorical_impairments_upper")
+        upper_plot = (
+            upper_df
+            .groupby(["age", "introductory_id"])["impairment_sum"]
+            .mean()
+            .reset_index()
+            .pivot(index="age", columns="introductory_id", values="impairment_sum")
+        )
+
+        with col2:
+            st.markdown("**Upper Limb Severity**")
+            st.line_chart(upper_plot)
+
+        # ---- TOP MILESTONES ----
+        st.subheader("Top Milestones by Age")
+
+        available_ages = sorted(md_filtered["age"].dropna().unique())
+        selected_age = st.selectbox("Select Age", available_ages)
+
+        top_gross = top_milestones_by_age(
+            md_filtered,
+            "gross_motor_development",
+            selected_age
+        )
+
+        if not top_gross.empty:
+            st.bar_chart(top_gross.set_index("Milestone"))
+        else:
+            st.info("No milestones recorded for this age.")
 
 
-df = load_entries_over_time()
-users = load_user_data()
-intro = load_intro_data()
-ht = load_ht_data()
-it = load_it_data()
-md = load_md_data()
-rt = load_rt_data()
-df_latest = load_latest_response()
-story_status = load_story_status_highest_age()
+# =====================================================
+# TRAINING
+# =====================================================
 
-st.title("Survey Dashboard")
+with tab3:
 
-total = len(intro)
-filled = (story_status["filled_story_at_highest_age"] == "Ja").sum()
-not_filled = total - filled
+    st.header("Training Overview")
 
-col1, col2, col3 = st.columns(3)
+    ht_filtered = ht[ht["introductory_id"].isin(selected_children)]
 
-col1.metric("Totalt antal svar", total)
-col2.metric("Fyllt i sista sektionen", filled)
-col3.metric("Ej fyllt i sista sektionen", not_filled)
+    if ht_filtered.empty:
+        st.warning("No training data available.")
+    else:
+        st.subheader("Training Entries Over Time")
 
-progress = filled / total if total > 0 else 0
-st.progress(progress)
+        training_counts = (
+            ht_filtered
+            .groupby("introductory_id")
+            .size()
+            .reset_index(name="entries")
+        )
 
-st.caption(f"{progress:.0%} har fyllt i story på högsta age")
+        st.bar_chart(training_counts.set_index("introductory_id"))
 
 
-latest_ts = df_latest["latest_response"].iloc[0]
-st.metric(
-    label="Senaste inkomna svar",
-    value=latest_ts.strftime("%Y-%m-%d %H:%M")
-)
+# =====================================================
+# RAW DATA
+# =====================================================
 
-df["cumulative_entries"] = df["entries"].cumsum()
-st.subheader("Totalt antal svar över tid (kumulativt)")
-st.line_chart(
-    df.set_index("date")["cumulative_entries"]
-)
-st.header("All tables displayed")
-st.subheader("Users")
-st.dataframe(users)
+with tab4:
 
-st.subheader("Introductory")
-st.dataframe(intro)
+    st.subheader("Introductory")
+    st.dataframe(intro)
 
-st.subheader("Home Training")
-st.dataframe(ht)
+    st.subheader("Motor Development")
+    st.dataframe(md_filtered)
 
-st.subheader("Intensive Therapies")
-st.dataframe(it)
+    st.subheader("Home Training")
+    st.dataframe(ht)
 
-st.subheader("Motorical development")
-st.dataframe(md)
-
-st.subheader("Refresh tokens")
-st.dataframe(rt)
+    st.subheader("Intensive Therapies")
+    st.dataframe(it)
