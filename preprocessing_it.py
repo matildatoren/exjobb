@@ -1,19 +1,21 @@
 import polars as pl
 
 def extract_neurohab_center_hours(struct):
-    """
-    Extracts total hours per neurohabilitation center from a struct.
-    Returns a list of dicts: {center_name, total_hours}
-    """
     if struct is None:
         return []
 
     struct_dict = dict(struct) if isinstance(struct, dict) else {}
-    details = struct_dict.get("details", {})  # assuming the struct has "details"
 
     rows = []
-    for center_name, info in details.items():
+
+    for center_name, info in struct_dict.items():
+
         if not info:
+            # if empty {} for this center, still register 0
+            rows.append({
+                "center_name": center_name,
+                "total_hours": 0.0
+            })
             continue
 
         hours = info.get("hours", 0)
@@ -21,29 +23,35 @@ def extract_neurohab_center_hours(struct):
         weeks = info.get("weeks", 1)
 
         try:
-            total_hours = float(hours or 0) * float(days or 0) * float(weeks or 0)
-
-            rows.append({
-                "center_name": center_name,
-                "total_hours": total_hours
-            })
+            total_hours = (
+                float(hours or 0)
+                * float(days or 0)
+                * float(weeks or 0)
+            )
         except (TypeError, ValueError):
-            continue
+            total_hours = 0.0
+
+        rows.append({
+            "center_name": center_name,
+            "total_hours": total_hours
+        })
 
     return rows
 
+
+
 def process_neurohab_hours_per_user_per_age(df: pl.DataFrame) -> pl.DataFrame:
-    """
-    Returns a table:
-    introductory_id | age | center_name | total_hours
-    """
+
     all_rows = []
 
     for row in df.iter_rows(named=True):
+
         intro_id = row["introductory_id"]
         age = row["age"]
 
-        centers_rows = extract_neurohab_center_hours(row.get("neurohabilitation_centers"))
+        centers_rows = extract_neurohab_center_hours(
+            row.get("neurohabilitation_centers")
+        )
 
         for r in centers_rows:
             r["introductory_id"] = intro_id
@@ -55,14 +63,15 @@ def process_neurohab_hours_per_user_per_age(df: pl.DataFrame) -> pl.DataFrame:
 
     result = pl.DataFrame(all_rows)
 
-    # Aggregate total hours per center, per child, per age
     result = (
-        result.group_by(["introductory_id", "age", "center_name"])
+        result
+        .group_by(["introductory_id", "age", "center_name"])
         .agg(pl.sum("total_hours").alias("total_hours"))
         .sort(["introductory_id", "age", "center_name"])
     )
 
     return result
+
 
 if __name__ == "__main__":
     from dataloader import load_data
