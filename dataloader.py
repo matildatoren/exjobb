@@ -19,7 +19,8 @@ class SurveyDatabase:
         """
         query = """
         SELECT 
-            id
+            id,
+            gmfcs_lvl 
         FROM introductory
         """
         return pl.read_database(query, self.conn)
@@ -111,4 +112,4 @@ if __name__ == "__main__":
     
     for table_name, df in data.items():
         print(f"\n{table_name}: {df.shape}")
-        print(df.head(5))
+        print(df.head(0))
