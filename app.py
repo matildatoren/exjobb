@@ -72,6 +72,22 @@ def milestone_count(df, column):
     return df
 
 
+def impairment_sum(df, column):
+    def sum_impairments(x):
+        if isinstance(x, dict):
+            details = x.get("details", {})
+            if isinstance(details, dict):
+                return sum(
+                    v for v in details.values()
+                    if isinstance(v, (int, float))
+                )
+        return 0
+
+    df = df.copy()
+    df["impairment_sum"] = df[column].apply(sum_impairments)
+    return df
+
+
 def top_milestones_by_age(df, column, age):
     subset = df[df["age"] == age]
 
@@ -173,13 +189,50 @@ with tab2:
 
         st.line_chart(pivot_fine)
 
+        # ---- IMPAIRMENTS ----
+        st.subheader("Impairments Severity (Sum of selected levels)")
+
+        col1, col2 = st.columns(2)
+
+        # LOWER
+        lower_df = impairment_sum(md_filtered, "motorical_impairments_lower")
+        lower_plot = (
+            lower_df
+            .groupby(["age", "introductory_id"])["impairment_sum"]
+            .mean()
+            .reset_index()
+            .pivot(index="age", columns="introductory_id", values="impairment_sum")
+        )
+
+        with col1:
+            st.markdown("**Lower Limb Severity**")
+            st.line_chart(lower_plot)
+
+        # UPPER
+        upper_df = impairment_sum(md_filtered, "motorical_impairments_upper")
+        upper_plot = (
+            upper_df
+            .groupby(["age", "introductory_id"])["impairment_sum"]
+            .mean()
+            .reset_index()
+            .pivot(index="age", columns="introductory_id", values="impairment_sum")
+        )
+
+        with col2:
+            st.markdown("**Upper Limb Severity**")
+            st.line_chart(upper_plot)
+
         # ---- TOP MILESTONES ----
         st.subheader("Top Milestones by Age")
 
         available_ages = sorted(md_filtered["age"].dropna().unique())
         selected_age = st.selectbox("Select Age", available_ages)
 
-        top_gross = top_milestones_by_age(md_filtered, "gross_motor_development", selected_age)
+        top_gross = top_milestones_by_age(
+            md_filtered,
+            "gross_motor_development",
+            selected_age
+        )
 
         if not top_gross.empty:
             st.bar_chart(top_gross.set_index("Milestone"))
