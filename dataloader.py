@@ -3,7 +3,7 @@ from typing import Optional
 from connect_db import get_connection
 
 class SurveyDatabase:
-    
+
     def __init__(self, conn: str):
         """
         Initialize database connection.
@@ -53,6 +53,7 @@ class SurveyDatabase:
         query = """
         SELECT 
             id,
+            age,
             introductory_id,
             participate_therapies_neurohabilitation,
             neurohabilitation_centers,
