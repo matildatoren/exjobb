@@ -52,10 +52,31 @@ selected_children = st.sidebar.multiselect(
 )
 
 # Apply filters
+
+# Filter introductory
+intro_filtered = intro[
+    (intro["gmfcs_lvl"].isin(selected_gmfcs)) &
+    (intro["id"].isin(selected_children))
+]
+
+# Filter motorical_development
 md_filtered = md[
     (md["gmfcs_lvl"].isin(selected_gmfcs)) &
     (md["introductory_id"].isin(selected_children))
 ]
+
+valid_ids = intro_filtered["id"].unique()
+
+# Filter home_training
+ht_filtered = ht[
+    ht["introductory_id"].isin(valid_ids)
+]
+
+# Filter intensive_therapies
+it_filtered = it[
+    it["introductory_id"].isin(valid_ids)
+]
+
 
 # ---------------------------
 # HELPER FUNCTIONS
@@ -272,13 +293,13 @@ with tab3:
 with tab4:
 
     st.subheader("Introductory")
-    st.dataframe(intro)
+    st.dataframe(intro_filtered)
+
+    st.subheader("Home Training")
+    st.dataframe(ht_filtered)
+
+    st.subheader("Intensive Therapies")
+    st.dataframe(it_filtered)
 
     st.subheader("Motor Development")
     st.dataframe(md_filtered)
-
-    st.subheader("Home Training")
-    st.dataframe(ht)
-
-    st.subheader("Intensive Therapies")
-    st.dataframe(it)
