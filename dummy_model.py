@@ -13,8 +13,8 @@ def add_delta_motor_score(motor_df: pl.DataFrame) -> pl.DataFrame:
 
     motor_df = motor_df.with_columns(
         (
-            pl.col("motorical_score")
-            - pl.col("motorical_score").shift(1)
+            pl.col("motorical_score_2")
+            - pl.col("motorical_score_2").shift(1)
         )
         .over("introductory_id")
         .alias("delta_motor_score")
@@ -65,7 +65,7 @@ def train_model(polars_df):
         columns=[
             "introductory_id",
             "age",
-            "motorical_score",
+            "motorical_score_2",
             "delta_motor_score"
         ]
     )
@@ -113,13 +113,23 @@ if __name__ == "__main__":
     from dataloader import load_data
     from connect_db import get_connection
 
-    from preprocessing_md import process_motorical_score_1
+    from preprocessing_md import process_motorical_score_2_per_user_per_age
     from preprocessing_ht import process_training_per_type_per_year
 
     conn = get_connection()
     data = load_data(conn)
 
-    motor_df = process_motorical_score_1(data["motorical_development"])
+    possible_milestones_by_age = {
+        1: 12,
+        2: 19,
+        3: 25,
+        4: 31,
+        5: 36,
+        6: 39,
+        7: 41
+    }
+
+    motor_df = process_motorical_score_2_per_user_per_age(data["motorical_development"], possible_milestones_by_age)
     home_df = process_training_per_type_per_year(data["home_training"])
 
     ml_df = build_ml_dataset(motor_df, home_df)

@@ -237,7 +237,7 @@ if __name__ == "__main__":
         6: 39,
         7: 41
     }
-    score1 = process_motorical_score_per_user_per_age(motorical_dev)
+    score1 = process_motorical_score_1(motorical_dev)
 
     score2 = process_motorical_score_2_per_user_per_age(
         motorical_dev, possible_milestones_by_age
@@ -246,7 +246,7 @@ if __name__ == "__main__":
 
     score3 = process_motorical_score_3_within_age_gmfcs(
         score2_df=score2,
-        introductory_df=intro
+        introductory_df=data["introductory"]
     )
 
     # -------- Slå ihop allt --------
