@@ -4,6 +4,8 @@ import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+
 
 def add_delta_motor_score(motor_df: pl.DataFrame) -> pl.DataFrame:
 
@@ -53,6 +55,8 @@ def build_ml_dataset(motor_df, home_df):
 
 def train_model(polars_df):
 
+    import time
+
     df = polars_df.to_pandas()
 
     y = df["delta_motor_score"]
@@ -71,17 +75,26 @@ def train_model(polars_df):
     )
 
     model = RandomForestRegressor(
-    n_estimators=200,
-    random_state=42,
-    verbose=1,
-    n_jobs=-1  
-)
+        n_estimators=200,
+        random_state=42,
+        verbose=1,
+        n_jobs=-1
+    )
+
+    print("\nTraining model...")
+    start_time = time.time()
 
     model.fit(X_train, y_train)
 
+    end_time = time.time()
+    print(f"\nTraining took {end_time - start_time:.2f} seconds")
+
     preds = model.predict(X_test)
 
+    print("\nModel evaluation:")
     print("R²:", r2_score(y_test, preds))
+    print("MAE:", mean_absolute_error(y_test, preds))
+    print("MSE:", mean_squared_error(y_test, preds))
 
     importance = pd.Series(
         model.feature_importances_,
@@ -91,8 +104,8 @@ def train_model(polars_df):
     print("\nTop 10 most important features:\n")
     print(importance.head(10))
 
-
     return model
+
 
 
 if __name__ == "__main__":
