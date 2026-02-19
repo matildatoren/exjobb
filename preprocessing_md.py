@@ -30,27 +30,52 @@ def extract_milestone_keys(struct) -> set[str]:
     """
     Gör milestones-listan till ett set av stabila nycklar (id/label/value eller str()).
     Krävs för att kunna räkna unika milestones över år.
+     Filtrerar bort "tomma" placeholders (None, "", "None", dict utan id/value/label).
     """
     if struct is None:
         return set()
-    data = dict(struct) if isinstance(struct, dict) else {}
+    
+    data = struct if isinstance(struct, dict) else {}
     milestones = data.get("milestones", [])
     if not milestones:
         return set()
+    
+    keys: set[str] = set()
 
-    keys = set()
     for m in milestones:
+    # 1) Ignorera explicita None
+        if m is None:
+            continue
+
+        # 2) Dict-milestones: ta id/value/label om finns, annars ignorera "tom" dict
         if isinstance(m, dict):
-            if m.get("id") is not None:
-                keys.add(str(m["id"]))
-            elif m.get("value") is not None:
-                keys.add(str(m["value"]))
-            elif m.get("label") is not None:
-                keys.add(str(m["label"]))
+            mid = m.get("id")
+            val = m.get("value")
+            lab = m.get("label")
+
+            # Tom placeholder-dict -> ignorera
+            if mid is None and val is None and lab is None:
+                continue
+
+            if mid is not None:
+                keys.add(str(mid))
+            elif val is not None:
+                keys.add(str(val))
+            elif lab is not None:
+                keys.add(str(lab))
             else:
-                keys.add(str(m))
+                # fallback (borde sällan trigga efter filtren ovan)
+                s = str(m).strip()
+                if s and s.lower() != "none":
+                    keys.add(s)
+
+        # 3) Icke-dict milestones (t.ex. str)
         else:
-            keys.add(str(m))
+            s = str(m).strip()
+            if not s or s.lower() == "none":
+                continue
+            keys.add(s)
+
     return keys
 
 
@@ -99,26 +124,38 @@ def process_motorical_score_2_per_user_per_age(
 
     per_row_keys = []
     for g, f in zip(gross_list, fine_list):
-        per_row_keys.append(sorted(extract_milestone_keys(g) | extract_milestone_keys(f)))
+        keys = extract_milestone_keys(g) | extract_milestone_keys(f)
+        per_row_keys.append(sorted(keys))
 
     df2 = df.with_columns(pl.Series("milestone_keys", per_row_keys))
 
     # slå ihop om det finns flera rader för samma (id, age): union inom året
+   # slå ihop om det finns flera rader för samma (id, age): union inom året
     per_age = (
         df2.group_by(["introductory_id", "age"])
-        .agg(pl.col("milestone_keys").flatten().unique().alias("milestone_keys_age"))
+        .agg(
+            pl.col("milestone_keys")
+            .list.explode(keep_nulls=False)   # tar bort nulls och ersätter flatten()-deprecated
+            .unique()
+            .alias("milestone_keys_age")
+        )
         .sort(["introductory_id", "age"])
     )
 
     # kumulativ union per individ
     def _cumulate(group: pl.DataFrame) -> pl.DataFrame:
         group = group.sort("age")
-        seen = set()
-        cum_counts = []
+        seen: set[str] = set()
+        cum_counts: list[int] = []
 
         for keys in group["milestone_keys_age"].to_list():
             keys = keys or []
-            seen |= set(keys)
+            # failsafe: filtrera bort None/"none"/tomma strängar om något ändå slinker igenom
+            cleaned = [
+                k for k in keys
+                if k is not None and str(k).strip() != "" and str(k).lower() != "none"
+            ]
+            seen |= set(cleaned)
             cum_counts.append(len(seen))
 
         return group.with_columns(pl.Series("cum_unique_milestones", cum_counts))
@@ -140,8 +177,43 @@ def process_motorical_score_2_per_user_per_age(
         .sort(["introductory_id", "age"])
  )
 
+def process_motorical_score_3_within_age_gmfcs(
+    score2_df: pl.DataFrame,
+    introductory_df: pl.DataFrame,
+) -> pl.DataFrame:
+    """
+    MotorScore 3 = percentil-rank av motorical_score_2 inom (age, GMFCS).
+    Returnerar 0..1 per (introductory_id, age).
+    """
+
+    # Koppla GMFCS till varje (introductory_id, age)
+    df = score2_df.join(
+        introductory_df.select([pl.col("id").alias("introductory_id"), "gmfcs_lvl"]),
+        on="introductory_id",
+        how="left"
+    )
+
+    # percentil inom (age, gmfcs): (rank-1)/(n-1). Om n=1 -> 1.0
+    df = df.with_columns(
+        pl.len().over(["age", "gmfcs_lvl"]).alias("_n"),
+        pl.col("motorical_score_2")
+          .rank(method="average")
+          .over(["age", "gmfcs_lvl"])
+          .alias("_r"),
+    ).with_columns(
+        pl.when(pl.col("_n") <= 1)
+          .then(pl.lit(1.0))
+          .otherwise((pl.col("_r") - 1) / (pl.col("_n") - 1))
+          .alias("motorical_score_3")
+    ).drop(["_n", "_r"])
+
+    return (
+        df.select(["introductory_id", "age", "gmfcs_lvl", "motorical_score_2", "motorical_score_3"])
+          .sort(["introductory_id", "age"])
+    )
+
+
 if __name__ == "__main__":
-    # Import your dataloader
     from dataloader import load_data
     from connect_db import get_connection
 
@@ -165,11 +237,30 @@ if __name__ == "__main__":
         6: 39,
         7: 41
     }
+    score1 = process_motorical_score_per_user_per_age(motorical_dev)
 
     score2 = process_motorical_score_2_per_user_per_age(
         motorical_dev, possible_milestones_by_age
     )
 
-    print(motor_score_table)
-    print(score2)
+
+    score3 = process_motorical_score_3_within_age_gmfcs(
+        score2_df=score2,
+        introductory_df=intro
+    )
+
+    # -------- Slå ihop allt --------
+    final_table = (
+        score1
+        .join(score2, on=["introductory_id", "age"], how="left")
+        .join(
+            score3.select(["introductory_id", "age", "motorical_score_3"]),
+            on=["introductory_id", "age"],
+            how="left"
+        )
+        .sort(["introductory_id", "age"])
+    )
+
+    print("\nFinal motor score table:\n")
+    print(final_table)
 
