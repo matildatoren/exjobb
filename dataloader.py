@@ -8,7 +8,7 @@ class SurveyDatabase:
         """
         Initialize database connection.
         """
-        self.conn = get_connection()
+        self.conn = conn
     
     def load_introductory(self) -> pl.DataFrame:
         """
