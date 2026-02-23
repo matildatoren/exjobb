@@ -135,7 +135,8 @@ def process_motorical_score_2_per_user_per_age(
         df2.group_by(["introductory_id", "age"])
         .agg(
             pl.col("milestone_keys")
-            .list.explode(keep_nulls=False)   # tar bort nulls och ersätter flatten()-deprecated
+            .explode()       
+            .drop_nulls()  
             .unique()
             .alias("milestone_keys_age")
         )
@@ -213,6 +214,7 @@ def process_motorical_score_3_within_age_gmfcs(
     )
 
 
+
 if __name__ == "__main__":
     from dataloader import load_data
     from connect_db import get_connection
@@ -263,4 +265,6 @@ if __name__ == "__main__":
 
     print("\nFinal motor score table:\n")
     print(final_table)
+
+
 

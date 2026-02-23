@@ -197,7 +197,7 @@ def process_training_per_type_per_year(df: pl.DataFrame) -> pl.DataFrame:
 
         # HOME
         home_rows = extract_training_details(
-            row.get("home_training"),
+            row.get("training_methods_therapies"),
             "home"
         )
 
