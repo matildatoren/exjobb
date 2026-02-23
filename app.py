@@ -157,6 +157,35 @@ with tab1:
 
     st.line_chart(entries.set_index("date")["cumulative"])
 
+    # Nytt, lägga till namn
+    st.subheader("Participants (names)")
+
+    cols_to_show = []
+    for c in ["nick_name", "gmfcs_lvl", "completed", "created_at", "id"]:
+        if c in intro.columns:
+            cols_to_show.append(c)
+
+    overview_people = intro[cols_to_show].copy()
+
+    if "created_at" in overview_people.columns:
+        overview_people["created_at"] = pd.to_datetime(overview_people["created_at"])
+
+    # Sort newest first if created_at exists
+    if "created_at" in overview_people.columns:
+        overview_people = overview_people.sort_values("created_at", ascending=False)
+
+    # Optional: prettier column names
+    rename_map = {
+        "nick_name": "Name",
+        "gmfcs_lvl": "GMFCS",
+        "completed": "Completed",
+        "created_at": "Created",
+        "id": "Intro ID",
+    }
+    overview_people = overview_people.rename(columns={k: v for k, v in rename_map.items() if k in overview_people.columns})
+
+    st.dataframe(overview_people, use_container_width=True)
+
 
 # =====================================================
 # MOTOR DEVELOPMENT
