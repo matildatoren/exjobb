@@ -129,8 +129,8 @@ def top_milestones_by_age(df, column, age):
 # TABS
 # ---------------------------
 
-tab1, tab2, tab3, tab4 = st.tabs(
-    ["Overview", "Motor Development", "Training", "Raw Data"]
+tab1, tab2, tab3, tab4, tab5 = st.tabs(
+    ["Overview", "Motor Development", "Training", "Raw Data", "Completeness"]
 )
 
 # =====================================================
@@ -332,3 +332,56 @@ with tab4:
 
     st.subheader("Motor Development")
     st.dataframe(md_filtered)
+
+# =====================================================
+# COMPLETENESS
+# =====================================================
+
+with tab5:
+
+    st.header("Survey Completeness")
+
+    ht_counts = ht.groupby("introductory_id").size().reset_index(name="ht_entries").rename(columns={"introductory_id": "id"})
+    md_counts = md.groupby("introductory_id").size().reset_index(name="md_entries").rename(columns={"introductory_id": "id"})
+    it_counts = it.groupby("introductory_id").size().reset_index(name="it_entries").rename(columns={"introductory_id": "id"})
+
+    md_nulls = md.groupby("introductory_id").agg(
+        gross_nulls=("gross_motor_development", lambda x: x.isna().sum()),
+        fine_nulls=("fine_motor_development", lambda x: x.isna().sum()),
+    ).reset_index().rename(columns={"introductory_id": "id"})
+
+    completeness = (
+        intro[["id", "nick_name", "gmfcs_lvl", "completed"]]
+        .merge(ht_counts, on="id", how="left")
+        .merge(md_counts, on="id", how="left")
+        .merge(it_counts, on="id", how="left")
+        .merge(md_nulls, on="id", how="left")
+        .fillna(0)
+    )
+
+    # Simple completeness score: average of the three entry counts
+    completeness["completeness_score"] = (
+        completeness[["ht_entries", "md_entries", "it_entries"]].mean(axis=1)
+    ).round(1)
+
+    # Color code: highlight rows with low entries despite completed=True
+    def highlight_suspicious(row):
+        if row["completed"] and row["completeness_score"] < 2:
+            return ["background-color: #ffe0e0"] * len(row)
+        elif row["completeness_score"] >= 3:
+            return ["background-color: #e0ffe0"] * len(row)
+        return [""] * len(row)
+
+    display_cols = [
+        "id", "nick_name", "gmfcs_lvl", "completed",
+        "ht_entries", "md_entries", "it_entries",
+        "gross_nulls", "fine_nulls", "completeness_score"
+    ]
+    display_cols = [c for c in display_cols if c in completeness.columns]
+
+    st.dataframe(
+        completeness[display_cols].style.apply(highlight_suspicious, axis=1),
+        use_container_width=True
+    )
+
+    st.caption("🟥 Marked as completed but has few entries — possibly incomplete. 🟩 3+ entries in all tables.")
