@@ -13,11 +13,11 @@ def train_simple_model(polars_df: pl.DataFrame):
     print(f"Using {len(df)} rows from {len(include_ids)} participants")
 
     features_of_interest = [
-        "hinderbana",
-        "Kinesiotaping",
-        "Handsplint",
-        "AFOs",
-        "Strength training",
+        'devices_AFOs', 
+        'devices_Handsplint', 
+        'devices_Kinesiotaping', 
+        'devices_Standing frame', 
+        'devices_inga'
     ]
 
     # Only keep features that actually exist in the dataframe

@@ -361,20 +361,24 @@ with tab5:
 
     # Simple completeness score: average of the three entry counts
     completeness["completeness_score"] = (
-        completeness[["ht_entries", "md_entries", "it_entries"]].mean(axis=1)
+        completeness[["ht_entries", "it_entries", "md_entries" ]].mean(axis=1)
     ).round(1)
 
-    # Color code: highlight rows with low entries despite completed=True
+        # Color code: highlight rows with low entries despite completed=True
     def highlight_suspicious(row):
-        if row["completed"] and row["completeness_score"] < 2:
-            return ["background-color: #ffe0e0"] * len(row)
-        elif row["completeness_score"] >= 3:
+        ht = row["ht_entries"]
+        it = row["it_entries"]
+        md = row["md_entries"]
+
+        if ht == md == it and row["completed"] and ht >= 1:
+            return ["background-color: #e0ffe0"] * len(row)
+        elif ht == md == it and ht >= 3:
             return ["background-color: #e0ffe0"] * len(row)
         return [""] * len(row)
 
     display_cols = [
         "id", "nick_name", "gmfcs_lvl", "completed",
-        "ht_entries", "md_entries", "it_entries",
+        "ht_entries", "it_entries", "md_entries", 
         "gross_nulls", "fine_nulls", "completeness_score"
     ]
     display_cols = [c for c in display_cols if c in completeness.columns]
@@ -383,5 +387,3 @@ with tab5:
         completeness[display_cols].style.apply(highlight_suspicious, axis=1),
         use_container_width=True
     )
-
-    st.caption("🟥 Marked as completed but has few entries — possibly incomplete. 🟩 3+ entries in all tables.")
