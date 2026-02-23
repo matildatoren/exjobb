@@ -63,7 +63,10 @@ def train_model(polars_df):
     df = polars_df.to_pandas()
 
     #Ändra här för att välja vilka surveys som används när man tränar
-    include_ids = [1, 4, 7, 12, ...]  
+    include_ids = ["65ab3206-7371-4471-845c-6d238050494f", 
+                    "9a3aeeeb-b409-4052-af0e-27e4893fb48f", 
+                    "a1c29f34-c3a0-4140-8398-e3d8eb980292", 
+                    "f9231c8d-2ade-4c0e-a878-a9524ccc3d65"]  
     df = df[df["introductory_id"].isin(include_ids)]
     print(f"Using {len(df)} rows from {len(include_ids)} participants")
 
