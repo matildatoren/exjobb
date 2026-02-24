@@ -8,7 +8,7 @@ def train_simple_model(polars_df: pl.DataFrame):
 
     df = polars_df.to_pandas()
 
-    include_ids = ["a1c29f34-c3a0-4140-8398-e3d8eb980292", "f9231c8d-2ade-4c0e-a878-a9524ccc3d65", "9a3aeeeb-b409-4052-af0e-27e4893fb48f", "65ab3206-7371-4471-845c-6d238050494f"]  # your completed survey ids
+    include_ids = ["a1c29f34-c3a0-4140-8398-e3d8eb980292", "f9231c8d-2ade-4c0e-a878-a9524ccc3d65", "9a3aeeeb-b409-4052-af0e-27e4893fb48f", "65ab3206-7371-4471-845c-6d238050494f"] 
     df = df[df["introductory_id"].isin(include_ids)]
     print(f"Using {len(df)} rows from {len(include_ids)} participants")
 
