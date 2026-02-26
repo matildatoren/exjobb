@@ -72,6 +72,56 @@ def process_neurohab_hours_per_user_per_age(df: pl.DataFrame) -> pl.DataFrame:
 
     return result
 
+def process_medical_treatments_per_user_per_age(df: pl.DataFrame) -> pl.DataFrame:
+
+    all_rows = []
+
+    for row in df.iter_rows(named=True):
+        intro_id = row["introductory_id"]
+        age = row["age"]
+        treatments = row.get("medical_treatments")
+
+        if treatments is None:
+            continue
+
+        # Format is a plain list of strings e.g. ["Botox", "Surgery"]
+        if isinstance(treatments, list):
+            treatment_list = treatments
+        elif isinstance(treatments, dict):
+            treatment_list = treatments.get("details", [])
+        else:
+            continue
+
+        for treatment_name in treatment_list:
+            if not treatment_name:
+                continue
+            all_rows.append({
+                "introductory_id": intro_id,
+                "age": age,
+                "treatment_name": str(treatment_name),
+            })
+
+    if not all_rows:
+        return pl.DataFrame(schema={"introductory_id": pl.Utf8, "age": pl.Int64})
+
+    result = pl.DataFrame(all_rows)
+
+    result = (
+        result
+        .with_columns(pl.lit(1).alias("received"))
+        .pivot(
+            values="received",
+            index=["introductory_id", "age"],
+            on="treatment_name",
+            aggregate_function="sum"
+        )
+        .fill_null(0)
+        .sort(["introductory_id", "age"])
+    )
+
+    return result
+
+
 
 if __name__ == "__main__":
     from dataloader import load_data
@@ -86,3 +136,13 @@ if __name__ == "__main__":
 
     print("\nTotal hours per neurohabilitation center, per user, per age:")
     print(neurohab_hours)
+
+    # --- Medical treatments ---
+    medical_df = process_medical_treatments_per_user_per_age(intensive_therapies)
+
+    print("\nMedical treatments detected:")
+    print(medical_df.columns)
+
+    print(f"\nShape: {medical_df.shape}")
+    print("\nMedical treatments table:")
+    print(medical_df)
