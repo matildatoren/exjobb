@@ -174,8 +174,8 @@ def process_motorical_score_2_per_user_per_age(
             .cast(pl.Float64)
             .alias("motorical_score_2")
         )
-        .select(["introductory_id", "age", "motorical_score_2"])
-        .sort(["introductory_id", "age"])
+            .select(["introductory_id", "age", "cum_unique_milestones", "motorical_score_2"])
+            .sort(["introductory_id", "age"])
  )
 
 def process_motorical_score_3_within_age_gmfcs(
@@ -214,6 +214,77 @@ def process_motorical_score_3_within_age_gmfcs(
     )
 
 
+def process_motorical_score_3_within_age_gmfcs_2(
+    score2_df: pl.DataFrame,
+    introductory_df: pl.DataFrame,
+) -> pl.DataFrame:
+    """
+    MotorScore 3 = cum_unique_milestones / expected_milestones_for_age_and_gmfcs
+    Returns 0..1 per (introductory_id, age).
+
+    The expected milestones matrix is hardcoded based on clinical knowledge.
+    Rows = age, Columns = GMFCS level (1-5).
+    """
+
+    gmfcs_mapping = {
+        "Level I – Walks without limitations": 1,
+        "Level II – Walks with limitations": 2,
+        "Level III – Walks using a hand-held mobility device": 3,
+        "Level IV – Self-mobility with limitations; may use powered mobility": 4,
+        "Level V – Transported in a manual wheelchair": 5,
+    }
+    # -------------------------------------------------------
+    # FILL IN EXPECTED MILESTONES PER AGE AND GMFCS LEVEL
+    # -------------------------------------------------------
+    expected_milestones = {
+        # age: {gmfcs_level: expected_milestones}
+        # GMFCS I ≈ 95%, II ≈ 80%, III ≈ 60%, IV ≈ 40%, V ≈ 20% of max possible
+        1: {1: 11, 2: 10, 3: 7,  4: 5,  5: 2},   # max = 12
+        2: {1: 18, 2: 15, 3: 11, 4: 8,  5: 4},   # max = 19
+        3: {1: 24, 2: 20, 3: 15, 4: 10, 5: 5},   # max = 25
+        4: {1: 29, 2: 25, 3: 19, 4: 12, 5: 6},   # max = 31
+        5: {1: 34, 2: 29, 3: 22, 4: 14, 5: 7},   # max = 36
+        6: {1: 37, 2: 31, 3: 23, 4: 16, 5: 8},   # max = 39
+        7: {1: 39, 2: 33, 3: 25, 4: 16, 5: 8},   # max = 41
+    }
+    # -------------------------------------------------------
+
+    # Join GMFCS onto score2
+    df = score2_df.join(
+        introductory_df.select([pl.col("id").alias("introductory_id"), "gmfcs_lvl"]),
+        on="introductory_id",
+        how="left"
+    )
+
+    # Look up expected milestones for each (age, gmfcs) row
+    ages = df["age"].to_list()
+    gmfcs_levels = df["gmfcs_lvl"].to_list()
+    cum_milestones = df["cum_unique_milestones"].to_list()
+
+    scores = []
+    for age, gmfcs, cum in zip(ages, gmfcs_levels, cum_milestones):
+        try:
+            gmfcs_int = gmfcs_mapping.get(gmfcs)        # ← map string to int
+            if gmfcs_int is None:
+                scores.append(None)
+                continue
+            expected = expected_milestones[int(age)][gmfcs_int]   # ← use mapped int
+        except (KeyError, TypeError):
+            scores.append(None)
+            continue
+
+        if expected is None or expected == 0:
+            scores.append(None)   # placeholder not yet filled in
+        else:
+            score = min(cum / expected, 1.0)  # cap at 1.0 in case child exceeds expected
+            scores.append(score)
+
+    return (
+        df.with_columns(pl.Series("motorical_score_3", scores))
+            .with_columns(pl.col("motorical_score_3").fill_null(0))
+            .select(["introductory_id", "age", "gmfcs_lvl", "motorical_score_2", "motorical_score_3"])
+            .sort(["introductory_id", "age"])
+    )
 
 if __name__ == "__main__":
     from dataloader import load_data
@@ -251,18 +322,29 @@ if __name__ == "__main__":
         introductory_df=data["introductory"]
     )
 
+    score3_2 = process_motorical_score_3_within_age_gmfcs_2(      
+        score2_df=score2,
+        introductory_df=data["introductory"]
+    )
+
     # -------- Slå ihop allt --------
     final_table = (
         score1
         .join(score2, on=["introductory_id", "age"], how="left")
         .join(
-            score3.select(["introductory_id", "age", "motorical_score_3"]),
+            score3.select(["introductory_id", "age", 
+                pl.col("motorical_score_3").alias("motorical_score_3_percentile")]),
+            on=["introductory_id", "age"],
+            how="left"
+        )
+        .join(
+            score3_2.select(["introductory_id", "age", 
+                pl.col("motorical_score_3").alias("motorical_score_3_expected")]),
             on=["introductory_id", "age"],
             how="left"
         )
         .sort(["introductory_id", "age"])
     )
-
     print("\nFinal motor score table:\n")
     print(final_table)
 
