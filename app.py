@@ -387,3 +387,19 @@ with tab5:
         completeness[display_cols].style.apply(highlight_suspicious, axis=1),
         use_container_width=True
     )
+
+    st.subheader("Participation Summary")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        count_ht = (completeness["ht_entries"] > 0).sum()
+        st.metric("Filled in Home Training", f"{count_ht} / {len(completeness)}")
+
+    with col2:
+        count_it = (completeness["it_entries"] > 0).sum()
+        st.metric("Filled in Intensive Therapies", f"{count_it} / {len(completeness)}")
+
+    with col3:
+        count_md = (completeness["md_entries"] > 0).sum()
+        st.metric("Filled in Motor Development", f"{count_md} / {len(completeness)}")
