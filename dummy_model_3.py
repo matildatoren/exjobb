@@ -182,7 +182,7 @@ def analyze_active_hours(df: pd.DataFrame):
         "introductory_id", "age", "motorical_score_2",
         "delta_motor_score",
         "home_hours", "sports_hours",
-        "neurohab_hours", "active_total"
+        "neurohab_hours", "active_total", "cum_unique_milestones"
     ]
 
     treatment_features = {
@@ -265,7 +265,7 @@ def plot_treatment_effects(df: pd.DataFrame):
     known_cols = [
         "introductory_id", "age", "motorical_score_2",
         "delta_motor_score", "home_hours", "sports_hours",
-        "neurohab_hours", "active_total"
+        "neurohab_hours", "active_total", "cum_unique_milestones"
     ]
 
     treatment_cols = [c for c in df.columns if c not in known_cols]
@@ -432,7 +432,7 @@ def plot_dose_response(df: pd.DataFrame, linear_model, poly_model, feature: str 
 if __name__ == "__main__":
     from dataloader import load_data
     from connect_db import get_connection
-    from preprocessing_md import process_motorical_score_2_per_user_per_age
+    from preprocessing_md import process_motorical_score_2_per_user_per_age, calculate_percentile_motor_score_3
     from preprocessing_ht import process_training_per_type_per_year
     from preprocessing_it import process_neurohab_hours_per_user_per_age, process_medical_treatments_per_user_per_age
 
@@ -440,6 +440,13 @@ if __name__ == "__main__":
     data = load_data(conn)
 
     motor_df = process_motorical_score_2_per_user_per_age(data["motorical_development"])
+    
+    # motor_df = calculate_percentile_motor_score_3(
+    #     score2_df=score2,
+    #     introductory_df=data["introductory"]
+    # )
+
+
     home_df = process_training_per_type_per_year(data["home_training"])
     neurohab_df = process_neurohab_hours_per_user_per_age(data["intensive_therapies"])
     medical_df = process_medical_treatments_per_user_per_age(data["intensive_therapies"])

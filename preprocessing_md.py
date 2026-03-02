@@ -186,7 +186,7 @@ def process_motorical_score_2_per_user_per_age(
             .cast(pl.Float64)
             .alias("motorical_score_2")
         )
-            .select(["introductory_id", "age", "motorical_score_2"])
+            .select(["introductory_id", "age", "cum_unique_milestones", "motorical_score_2"])
             .sort(["introductory_id", "age"])
  )
 
