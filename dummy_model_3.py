@@ -265,8 +265,17 @@ def plot_treatment_effects(df: pd.DataFrame):
     known_cols = [
         "introductory_id", "age", "motorical_score_2",
         "delta_motor_score", "home_hours", "sports_hours",
-        "neurohab_hours", "active_total"
+        "neurohab_hours", "active_total", "home_hr", "sports_hr",
+        "neurohab_hr", "active_total_hr"
     ]
+
+    # known_cols = [
+    #     "introductory_id", "age", "motorical_score_2",
+    #     "delta_motor_score",
+    #     "home_hr", "sports_hr",
+    #     "neurohab_hr", "active_total_hr"
+    # ]
+
     treatment_cols = [c for c in df.columns if c not in known_cols]
 
     if not treatment_cols:
