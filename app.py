@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import json
 
 from connect_db import get_connection
 
@@ -19,7 +18,6 @@ def load_data():
     it = pd.read_sql("SELECT * FROM intensive_therapies", conn)
     md = pd.read_sql("SELECT * FROM motorical_development", conn)
     return intro, ht, it, md
-
 
 intro, ht, it, md = load_data()
 
@@ -51,86 +49,228 @@ selected_children = st.sidebar.multiselect(
     default=child_options
 )
 
-# Apply filters
-
-# Filter introductory
+# Apply filters (consistent across tables)
 intro_filtered = intro[
     (intro["gmfcs_lvl"].isin(selected_gmfcs)) &
     (intro["id"].isin(selected_children))
 ]
 
-# Filter motorical_development
-md_filtered = md[
-    (md["gmfcs_lvl"].isin(selected_gmfcs)) &
-    (md["introductory_id"].isin(selected_children))
-]
-
 valid_ids = intro_filtered["id"].unique()
 
-# Filter home_training
+md_filtered = md[
+    (md["gmfcs_lvl"].isin(selected_gmfcs)) &
+    (md["introductory_id"].isin(valid_ids))
+]
+
 ht_filtered = ht[
     ht["introductory_id"].isin(valid_ids)
 ]
 
-# Filter intensive_therapies
 it_filtered = it[
     it["introductory_id"].isin(valid_ids)
 ]
-
 
 # ---------------------------
 # HELPER FUNCTIONS
 # ---------------------------
 
-def milestone_count(df, column):
-    def count_milestones(x):
-        if isinstance(x, dict):
-            return len(x.get("milestones", []))
-        return 0
+def _is_filled(x) -> bool:
+    if x is None:
+        return False
+    try:
+        if pd.isna(x):
+            return False
+    except Exception:
+        pass
 
-    df = df.copy()
-    df["milestone_count"] = df[column].apply(count_milestones)
-    return df
+    if isinstance(x, str):
+        return x.strip() != ""
+
+    if isinstance(x, dict):
+        if "milestones" in x:
+            ms = x.get("milestones") or []
+            return len(ms) > 0
+
+        if "details" in x or "selected" in x or "other" in x:
+            details = x.get("details") or {}
+            selected = x.get("selected") or []
+            other = (x.get("other") or "").strip()
+            return (isinstance(details, dict) and len(details) > 0) or (len(selected) > 0) or (other != "")
+
+        return len(x) > 0
+
+    if isinstance(x, list):
+        return len(x) > 0
+
+    return True
 
 
-def impairment_sum(df, column):
-    def sum_impairments(x):
-        if isinstance(x, dict):
-            details = x.get("details", {})
-            if isinstance(details, dict):
-                return sum(
-                    v for v in details.values()
-                    if isinstance(v, (int, float))
-                )
-        return 0
+def section_completion_per_id_age(df: pd.DataFrame, id_col: str, age_col: str, content_cols: list[str], prefix: str):
+    cols = [c for c in content_cols if c in df.columns]
+    if len(cols) == 0:
+        return pd.DataFrame(columns=[id_col, age_col, f"{prefix}_filled_fields", f"{prefix}_total_fields"])
 
-    df = df.copy()
-    df["impairment_sum"] = df[column].apply(sum_impairments)
-    return df
+    tmp = df[[id_col, age_col] + cols].copy()
+    filled = tmp[cols].applymap(_is_filled).sum(axis=1)
+    tmp[f"{prefix}_filled_fields"] = filled
+    tmp[f"{prefix}_total_fields"] = len(cols)
+
+    out = (
+        tmp.groupby([id_col, age_col], as_index=False)[[f"{prefix}_filled_fields", f"{prefix}_total_fields"]]
+           .sum()
+    )
+    return out
 
 
-def top_milestones_by_age(df, column, age):
-    subset = df[df["age"] == age]
+def intensive_completion_per_id_age(it_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Conditional logic:
+      - participate_therapies_neurohabilitation is ALWAYS expected (if column exists)
+      - medical_treatments is ALWAYS expected (if column exists)
+      - neurohabilitation_centers + methods_applied_during_intense_training count ONLY if participate == Yes
+    """
+    participate_col = "participate_therapies_neurohabilitation"
+    centers_col = "neurohabilitation_centers"
+    methods_col = "methods_applied_during_intense_training"
+    medical_col = "medical_treatments"  
 
-    milestones = []
-    for item in subset[column]:
-        if isinstance(item, dict):
-            milestones.extend(item.get("milestones", []))
+    needed = [c for c in [participate_col, centers_col, methods_col, medical_col] if c in it_df.columns]
+    tmp = it_df[["introductory_id", "age"] + needed].copy()
 
-    if len(milestones) == 0:
-        return pd.DataFrame()
+    def is_yes(x) -> bool:
+        if x is None:
+            return False
+        if isinstance(x, str):
+            return x.strip().lower() in {"yes", "ja", "true", "1"}
+        return False
 
-    counts = pd.Series(milestones).value_counts().reset_index()
-    counts.columns = ["Milestone", "Count"]
-    return counts
+    filled_list = []
+    total_list = []
+
+    for _, row in tmp.iterrows():
+        participate_val = row.get(participate_col, None)
+
+        base_total = 0
+        base_filled = 0
+
+        if participate_col in tmp.columns:
+            base_total += 1
+            base_filled += 1 if _is_filled(participate_val) else 0
+
+        if medical_col in tmp.columns:
+            base_total += 1
+            base_filled += 1 if _is_filled(row.get(medical_col, None)) else 0
+
+        cond_total = 0
+        cond_filled = 0
+
+        if is_yes(participate_val):
+            if centers_col in tmp.columns:
+                cond_total += 1
+                cond_filled += 1 if _is_filled(row.get(centers_col, None)) else 0
+            if methods_col in tmp.columns:
+                cond_total += 1
+                cond_filled += 1 if _is_filled(row.get(methods_col, None)) else 0
+
+        filled_list.append(base_filled + cond_filled)
+        total_list.append(base_total + cond_total)
+
+    tmp["it_filled_fields"] = filled_list
+    tmp["it_total_fields"] = total_list
+
+    out = (
+        tmp.groupby(["introductory_id", "age"], as_index=False)[["it_filled_fields", "it_total_fields"]]
+           .sum()
+           .rename(columns={"introductory_id": "id"})
+    )
+    return out
+
+
+def compute_progress_percent(intro_df: pd.DataFrame, ht_df: pd.DataFrame, it_df: pd.DataFrame, md_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Progress over the 3 sections (HT/IT/MD) across ages 1..max_age per child.
+    - Intro not included.
+    - Each section-year contributes fractionally based on how many relevant fields are filled.
+    - IT has conditional fields that only count if participate == Yes.
+    """
+    ht_cols = ["training_methods_therapies", "devices", "other_training_methods_therapies"]
+    md_cols = ["gross_motor_development", "fine_motor_development", "motorical_impairments_lower", "motorical_impairments_upper"]
+
+    def max_age_by(df, id_col="introductory_id"):
+        if df.empty or "age" not in df.columns or id_col not in df.columns:
+            return pd.Series(dtype=float)
+        return df.groupby(id_col)["age"].max()
+
+    max_ht = max_age_by(ht_df)
+    max_it = max_age_by(it_df)
+    max_md = max_age_by(md_df)
+
+    max_age = pd.concat([max_ht, max_it, max_md], axis=1).max(axis=1)
+    max_age = max_age.reindex(intro_df["id"]).fillna(0).astype(int)
+
+    # Build age grid per child: ages 1..max_age
+    grid_rows = []
+    for child_id, m in zip(intro_df["id"].tolist(), max_age.tolist()):
+        for age in range(1, m + 1):
+            grid_rows.append((child_id, age))
+    grid = pd.DataFrame(grid_rows, columns=["id", "age"])
+
+    if grid.empty:
+        return intro_df[["id"]].assign(progress_pct=0.0, n_years=0)
+
+    ht_comp = section_completion_per_id_age(ht_df, "introductory_id", "age", ht_cols, "ht").rename(columns={"introductory_id": "id"})
+    md_comp = section_completion_per_id_age(md_df, "introductory_id", "age", md_cols, "md").rename(columns={"introductory_id": "id"})
+    it_comp = intensive_completion_per_id_age(it_df)
+
+    ht_total_fields = ht_comp["ht_total_fields"].max() if not ht_comp.empty else len([c for c in ht_cols if c in ht_df.columns])
+    md_total_fields = md_comp["md_total_fields"].max() if not md_comp.empty else len([c for c in md_cols if c in md_df.columns])
+
+    merged = (
+        grid.merge(ht_comp, on=["id", "age"], how="left")
+            .merge(it_comp, on=["id", "age"], how="left")
+            .merge(md_comp, on=["id", "age"], how="left")
+    )
+
+    for col in ["ht_filled_fields", "it_filled_fields", "md_filled_fields"]:
+        if col in merged.columns:
+            merged[col] = merged[col].fillna(0)
+
+    merged["ht_total_fields"] = ht_total_fields
+    merged["md_total_fields"] = md_total_fields
+
+    # If IT row missing for a given age, treat as 0 filled out of base_total (participate + medical), if those columns exist
+    it_base_total = 0
+    if "participate_therapies_neurohabilitation" in it_df.columns:
+        it_base_total += 1
+    if "medical_treatments" in it_df.columns:
+        it_base_total += 1
+
+    merged["it_total_fields"] = merged["it_total_fields"].fillna(it_base_total)
+    merged["it_filled_fields"] = merged["it_filled_fields"].fillna(0)
+
+    merged["total_fields_per_age"] = merged["ht_total_fields"] + merged["it_total_fields"] + merged["md_total_fields"]
+    merged["filled_fields_per_age"] = merged["ht_filled_fields"] + merged["it_filled_fields"] + merged["md_filled_fields"]
+
+    per_child = merged.groupby("id", as_index=False).agg(
+        filled=("filled_fields_per_age", "sum"),
+        total=("total_fields_per_age", "sum"),
+        n_years=("age", "nunique"),
+    )
+
+    per_child["progress_pct"] = per_child.apply(
+        lambda r: 0.0 if r["total"] == 0 else (100.0 * r["filled"] / r["total"]),
+        axis=1
+    )
+
+    return per_child[["id", "progress_pct", "n_years"]]
 
 
 # ---------------------------
 # TABS
 # ---------------------------
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(
-    ["Overview", "Motor Development", "Training", "Raw Data", "Completeness"]
+tab1, tab2, tab3 = st.tabs(
+    ["Overview", "Raw Data", "Completeness"]
 )
 
 # =====================================================
@@ -138,7 +278,6 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs(
 # =====================================================
 
 with tab1:
-
     st.title("Survey Overview")
 
     total = len(intro)
@@ -154,10 +293,8 @@ with tab1:
     entries["date"] = pd.to_datetime(entries["created_at"]).dt.date
     entries = entries.groupby("date").size().reset_index(name="count")
     entries["cumulative"] = entries["count"].cumsum()
-
     st.line_chart(entries.set_index("date")["cumulative"])
 
-    # Nytt, lägga till namn
     st.subheader("Participants (names)")
 
     cols_to_show = []
@@ -165,162 +302,40 @@ with tab1:
         if c in intro.columns:
             cols_to_show.append(c)
 
-    overview_people = intro[cols_to_show].copy()
+    progress = compute_progress_percent(intro, ht, it, md)
+
+    overview_people = intro[cols_to_show].merge(
+        progress[["id", "progress_pct", "n_years"]],
+        on="id",
+        how="left"
+    )
+    overview_people["progress_pct"] = overview_people["progress_pct"].fillna(0).round(1)
+    overview_people["n_years"] = overview_people["n_years"].fillna(0).astype(int)
 
     if "created_at" in overview_people.columns:
         overview_people["created_at"] = pd.to_datetime(overview_people["created_at"])
-
-    # Sort newest first if created_at exists
-    if "created_at" in overview_people.columns:
         overview_people = overview_people.sort_values("created_at", ascending=False)
 
-    # Optional: prettier column names
     rename_map = {
         "nick_name": "Name",
         "gmfcs_lvl": "GMFCS",
         "completed": "Completed",
         "created_at": "Created",
         "id": "Intro ID",
+        "progress_pct": "Progress (%)",
+        "n_years": "Years observed",
     }
     overview_people = overview_people.rename(columns={k: v for k, v in rename_map.items() if k in overview_people.columns})
 
     st.dataframe(overview_people, use_container_width=True)
 
 
-# =====================================================
-# MOTOR DEVELOPMENT
-# =====================================================
-
-with tab2:
-
-    st.header("Motor Development")
-
-    if md_filtered.empty:
-        st.warning("No data available for selected filters.")
-    else:
-
-        # ---- GROSS ----
-        st.subheader("Gross Motor Milestones")
-
-        gross_df = milestone_count(md_filtered, "gross_motor_development")
-
-        gross_plot = (
-            gross_df
-            .groupby(["age", "introductory_id"])["milestone_count"]
-            .mean()
-            .reset_index()
-        )
-
-        pivot_gross = gross_plot.pivot(
-            index="age",
-            columns="introductory_id",
-            values="milestone_count"
-        )
-
-        st.line_chart(pivot_gross)
-
-        # ---- FINE ----
-        st.subheader("Fine Motor Milestones")
-
-        fine_df = milestone_count(md_filtered, "fine_motor_development")
-
-        fine_plot = (
-            fine_df
-            .groupby(["age", "introductory_id"])["milestone_count"]
-            .mean()
-            .reset_index()
-        )
-
-        pivot_fine = fine_plot.pivot(
-            index="age",
-            columns="introductory_id",
-            values="milestone_count"
-        )
-
-        st.line_chart(pivot_fine)
-
-        # ---- IMPAIRMENTS ----
-        st.subheader("Impairments Severity (Sum of selected levels)")
-
-        col1, col2 = st.columns(2)
-
-        # LOWER
-        lower_df = impairment_sum(md_filtered, "motorical_impairments_lower")
-        lower_plot = (
-            lower_df
-            .groupby(["age", "introductory_id"])["impairment_sum"]
-            .mean()
-            .reset_index()
-            .pivot(index="age", columns="introductory_id", values="impairment_sum")
-        )
-
-        with col1:
-            st.markdown("**Lower Limb Severity**")
-            st.line_chart(lower_plot)
-
-        # UPPER
-        upper_df = impairment_sum(md_filtered, "motorical_impairments_upper")
-        upper_plot = (
-            upper_df
-            .groupby(["age", "introductory_id"])["impairment_sum"]
-            .mean()
-            .reset_index()
-            .pivot(index="age", columns="introductory_id", values="impairment_sum")
-        )
-
-        with col2:
-            st.markdown("**Upper Limb Severity**")
-            st.line_chart(upper_plot)
-
-        # ---- TOP MILESTONES ----
-        st.subheader("Top Milestones by Age")
-
-        available_ages = sorted(md_filtered["age"].dropna().unique())
-        selected_age = st.selectbox("Select Age", available_ages)
-
-        top_gross = top_milestones_by_age(
-            md_filtered,
-            "gross_motor_development",
-            selected_age
-        )
-
-        if not top_gross.empty:
-            st.bar_chart(top_gross.set_index("Milestone"))
-        else:
-            st.info("No milestones recorded for this age.")
-
-
-# =====================================================
-# TRAINING
-# =====================================================
-
-with tab3:
-
-    st.header("Training Overview")
-
-    ht_filtered = ht[ht["introductory_id"].isin(selected_children)]
-
-    if ht_filtered.empty:
-        st.warning("No training data available.")
-    else:
-        st.subheader("Training Entries Over Time")
-
-        training_counts = (
-            ht_filtered
-            .groupby("introductory_id")
-            .size()
-            .reset_index(name="entries")
-        )
-
-        st.bar_chart(training_counts.set_index("introductory_id"))
-
 
 # =====================================================
 # RAW DATA
 # =====================================================
 
-with tab4:
-
+with tab2:
     st.subheader("Introductory")
     st.dataframe(intro_filtered)
 
@@ -334,11 +349,10 @@ with tab4:
     st.dataframe(md_filtered)
 
 # =====================================================
-# COMPLETENESS
+# COMPLETENESS (existing simple view kept)
 # =====================================================
 
-with tab5:
-
+with tab3:
     st.header("Survey Completeness")
 
     ht_counts = ht.groupby("introductory_id").size().reset_index(name="ht_entries").rename(columns={"introductory_id": "id"})
@@ -359,26 +373,24 @@ with tab5:
         .fillna(0)
     )
 
-    # Simple completeness score: average of the three entry counts
     completeness["completeness_score"] = (
-        completeness[["ht_entries", "it_entries", "md_entries" ]].mean(axis=1)
+        completeness[["ht_entries", "it_entries", "md_entries"]].mean(axis=1)
     ).round(1)
 
-        # Color code: highlight rows with low entries despite completed=True
     def highlight_suspicious(row):
-        ht = row["ht_entries"]
-        it = row["it_entries"]
-        md = row["md_entries"]
+        ht_e = row["ht_entries"]
+        it_e = row["it_entries"]
+        md_e = row["md_entries"]
 
-        if ht == md == it and row["completed"] and ht >= 1:
+        if ht_e == md_e == it_e and row["completed"] and ht_e >= 1:
             return ["background-color: #e0ffe0"] * len(row)
-        elif ht == md == it and ht >= 3:
+        elif ht_e == md_e == it_e and ht_e >= 3:
             return ["background-color: #e0ffe0"] * len(row)
         return [""] * len(row)
 
     display_cols = [
         "id", "nick_name", "gmfcs_lvl", "completed",
-        "ht_entries", "it_entries", "md_entries", 
+        "ht_entries", "it_entries", "md_entries",
         "gross_nulls", "fine_nulls", "completeness_score"
     ]
     display_cols = [c for c in display_cols if c in completeness.columns]
