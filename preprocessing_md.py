@@ -119,11 +119,20 @@ def process_motorical_score_1(df: pl.DataFrame) -> pl.DataFrame:
 
 def process_motorical_score_2_per_user_per_age(
     df: pl.DataFrame,
-    possible_milestones_by_age: dict[int, int],
 ) -> pl.DataFrame:
     
     #MotorScore 2 = (kumulativt antal unika milestones hittills) / (möjliga milestones vid den åldern)
     #0..1
+
+    possible_milestones_by_age = {
+        1: 12,
+        2: 19,
+        3: 25,
+        4: 31,
+        5: 36,
+        6: 39,
+        7: 41
+    }
 
     gross_list = df["gross_motor_development"].to_list()
     fine_list = df["fine_motor_development"].to_list()
@@ -294,20 +303,10 @@ if __name__ == "__main__":
 
     motorical_dev = data["motorical_development"]
 
-
-    possible_milestones_by_age = {
-        1: 12,
-        2: 19,
-        3: 25,
-        4: 31,
-        5: 36,
-        6: 39,
-        7: 41
-    }
     score1 = process_motorical_score_1(motorical_dev)
 
     score2 = process_motorical_score_2_per_user_per_age(
-        motorical_dev, possible_milestones_by_age
+        motorical_dev
     )
 
 
