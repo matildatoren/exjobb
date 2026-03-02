@@ -1,5 +1,9 @@
 import polars as pl
 
+# --------------------------------------------
+# Helper methods
+# --------------------------------------------
+
 def count_milestones(struct):
     if struct is None:
         return 0
@@ -78,6 +82,10 @@ def extract_milestone_keys(struct) -> set[str]:
 
     return keys
 
+# --------------------------------------------
+# Calculation of 4 different motorical scores
+# --------------------------------------------
+
 
 def process_motorical_score_1(df: pl.DataFrame) -> pl.DataFrame:
     
@@ -100,7 +108,6 @@ def process_motorical_score_1(df: pl.DataFrame) -> pl.DataFrame:
         pl.Series("motorical_score", scores)
     )
 
-    # Group per introductory_id AND age
     result = (
         df.group_by(["introductory_id", "age"])
         .agg(pl.mean("motorical_score").alias("motorical_score"))
@@ -118,7 +125,6 @@ def process_motorical_score_2_per_user_per_age(
     #MotorScore 2 = (kumulativt antal unika milestones hittills) / (möjliga milestones vid den åldern)
     #0..1
 
-    # per rad -> vilka milestones uppnåddes detta år (gross+fine)
     gross_list = df["gross_motor_development"].to_list()
     fine_list = df["fine_motor_development"].to_list()
 
@@ -129,8 +135,6 @@ def process_motorical_score_2_per_user_per_age(
 
     df2 = df.with_columns(pl.Series("milestone_keys", per_row_keys))
 
-    # slå ihop om det finns flera rader för samma (id, age): union inom året
-   # slå ihop om det finns flera rader för samma (id, age): union inom året
     per_age = (
         df2.group_by(["introductory_id", "age"])
         .agg(
@@ -143,7 +147,6 @@ def process_motorical_score_2_per_user_per_age(
         .sort(["introductory_id", "age"])
     )
 
-    # kumulativ union per individ
     def _cumulate(group: pl.DataFrame) -> pl.DataFrame:
         group = group.sort("age")
         seen: set[str] = set()
@@ -178,7 +181,7 @@ def process_motorical_score_2_per_user_per_age(
             .sort(["introductory_id", "age"])
  )
 
-def process_motorical_score_3_within_age_gmfcs(
+def calculate_percentile_motor_score_3(
     score2_df: pl.DataFrame,
     introductory_df: pl.DataFrame,
 ) -> pl.DataFrame:
@@ -187,7 +190,6 @@ def process_motorical_score_3_within_age_gmfcs(
     Returnerar 0..1 per (introductory_id, age).
     """
 
-    # Koppla GMFCS till varje (introductory_id, age)
     df = score2_df.join(
         introductory_df.select([pl.col("id").alias("introductory_id"), "gmfcs_lvl"]),
         on="introductory_id",
@@ -214,7 +216,7 @@ def process_motorical_score_3_within_age_gmfcs(
     )
 
 
-def process_motorical_score_3_within_age_gmfcs_2(
+def calculate_expected_milestone_score_3(
     score2_df: pl.DataFrame,
     introductory_df: pl.DataFrame,
 ) -> pl.DataFrame:
@@ -233,9 +235,7 @@ def process_motorical_score_3_within_age_gmfcs_2(
         "Level IV – Self-mobility with limitations; may use powered mobility": 4,
         "Level V – Transported in a manual wheelchair": 5,
     }
-    # -------------------------------------------------------
-    # FILL IN EXPECTED MILESTONES PER AGE AND GMFCS LEVEL
-    # -------------------------------------------------------
+
     expected_milestones = {
         # age: {gmfcs_level: expected_milestones}
         # GMFCS I ≈ 95%, II ≈ 80%, III ≈ 60%, IV ≈ 40%, V ≈ 20% of max possible
@@ -247,9 +247,8 @@ def process_motorical_score_3_within_age_gmfcs_2(
         6: {1: 37, 2: 31, 3: 23, 4: 16, 5: 8},   # max = 39
         7: {1: 39, 2: 33, 3: 25, 4: 16, 5: 8},   # max = 41
     }
-    # -------------------------------------------------------
 
-    # Join GMFCS onto score2
+
     df = score2_df.join(
         introductory_df.select([pl.col("id").alias("introductory_id"), "gmfcs_lvl"]),
         on="introductory_id",
@@ -264,19 +263,19 @@ def process_motorical_score_3_within_age_gmfcs_2(
     scores = []
     for age, gmfcs, cum in zip(ages, gmfcs_levels, cum_milestones):
         try:
-            gmfcs_int = gmfcs_mapping.get(gmfcs)        # ← map string to int
+            gmfcs_int = gmfcs_mapping.get(gmfcs)    
             if gmfcs_int is None:
                 scores.append(None)
                 continue
-            expected = expected_milestones[int(age)][gmfcs_int]   # ← use mapped int
+            expected = expected_milestones[int(age)][gmfcs_int]
         except (KeyError, TypeError):
             scores.append(None)
             continue
 
         if expected is None or expected == 0:
-            scores.append(None)   # placeholder not yet filled in
+            scores.append(None)
         else:
-            score = min(cum / expected, 1.0)  # cap at 1.0 in case child exceeds expected
+            score = min(cum / expected, 1.0) 
             scores.append(score)
 
     return (
@@ -293,13 +292,8 @@ if __name__ == "__main__":
     conn = get_connection()
     data = load_data(conn)
 
-    # Use the home_training table from your loader
     motorical_dev = data["motorical_development"]
 
-    motor_score_table = process_motorical_score_1(motorical_dev)
-
-    print("\nMotorical score per introductory_id per age:\n")
-    print(motor_score_table)
 
     possible_milestones_by_age = {
         1: 12,
@@ -317,15 +311,18 @@ if __name__ == "__main__":
     )
 
 
-    score3 = process_motorical_score_3_within_age_gmfcs(
+    score3 = calculate_percentile_motor_score_3(
         score2_df=score2,
         introductory_df=data["introductory"]
     )
 
-    score3_2 = process_motorical_score_3_within_age_gmfcs_2(      
+    score3_2 = calculate_expected_milestone_score_3(      
         score2_df=score2,
         introductory_df=data["introductory"]
     )
+
+    print("\nMotorical score per introductory_id per age:\n")
+    print(score1)
 
     # -------- Slå ihop allt --------
     final_table = (
