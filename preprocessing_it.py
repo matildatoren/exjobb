@@ -1,5 +1,6 @@
 import polars as pl
 
+# --- helper method ----
 def extract_neurohab_center_hours(struct):
     if struct is None:
         return []
@@ -11,7 +12,6 @@ def extract_neurohab_center_hours(struct):
     for center_name, info in struct_dict.items():
 
         if not info:
-            # if empty {} for this center, still register 0
             rows.append({
                 "center_name": center_name,
                 "total_hours": 0.0
@@ -39,7 +39,7 @@ def extract_neurohab_center_hours(struct):
     return rows
 
 
-
+# --- extract neurorehabilitation center hours for every child every year ----
 def process_neurohab_hours_per_user_per_age(df: pl.DataFrame) -> pl.DataFrame:
 
     all_rows = []
@@ -72,6 +72,7 @@ def process_neurohab_hours_per_user_per_age(df: pl.DataFrame) -> pl.DataFrame:
 
     return result
 
+# --- extract medical treatments for every child every year, 0 or 1 ----
 def process_medical_treatments_per_user_per_age(df: pl.DataFrame) -> pl.DataFrame:
 
     all_rows = []
@@ -84,7 +85,6 @@ def process_medical_treatments_per_user_per_age(df: pl.DataFrame) -> pl.DataFram
         if treatments is None:
             continue
 
-        # Format is a plain list of strings e.g. ["Botox", "Surgery"]
         if isinstance(treatments, list):
             treatment_list = treatments
         elif isinstance(treatments, dict):
@@ -133,12 +133,10 @@ if __name__ == "__main__":
     intensive_therapies = data["intensive_therapies"]
 
     neurohab_hours = process_neurohab_hours_per_user_per_age(intensive_therapies)
+    medical_df = process_medical_treatments_per_user_per_age(intensive_therapies)
 
     print("\nTotal hours per neurohabilitation center, per user, per age:")
     print(neurohab_hours)
-
-    # --- Medical treatments ---
-    medical_df = process_medical_treatments_per_user_per_age(intensive_therapies)
 
     print("\nMedical treatments detected:")
     print(medical_df.columns)

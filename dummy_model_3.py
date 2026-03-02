@@ -17,7 +17,6 @@ from preprocessing_it import process_neurohab_hours_per_user_per_age, process_me
 def build_dose_response_dataset(
     motor_df: pl.DataFrame,
     home_df: pl.DataFrame,
-    possible_milestones_by_age: dict[int, int],
 ) -> pd.DataFrame:
     """
     Joins delta motor score with total training hours per child per year.
@@ -59,7 +58,6 @@ def build_dose_response_dataset(
     ) #Joins total hours and category hours to motor df table and puts 0 if there is no training
 
     return df.to_pandas()
-
 
 # -------------------------------------------------------
 # Build combined active hours dataset (no devices)
@@ -425,21 +423,7 @@ if __name__ == "__main__":
     conn = get_connection()
     data = load_data(conn)
 
-    possible_milestones_by_age = {
-        1: 12,
-        2: 19,
-        3: 25,
-        4: 31,
-        5: 36,
-        6: 39,
-        7: 41
-    }
-
-
-    motor_df = process_motorical_score_2_per_user_per_age(
-        data["motorical_development"], possible_milestones_by_age
-    )
-
+    motor_df = process_motorical_score_2_per_user_per_age(data["motorical_development"])
     home_df = process_training_per_type_per_year(data["home_training"])
     neurohab_df = process_neurohab_hours_per_user_per_age(data["intensive_therapies"])
     medical_df = process_medical_treatments_per_user_per_age(data["intensive_therapies"])
@@ -449,7 +433,9 @@ if __name__ == "__main__":
     # motor_df = motor_df.filter(pl.col("introductory_id").is_in(completed_ids))
     # home_df = home_df.filter(pl.col("introductory_id").is_in(completed_ids))
 
-    df = build_dose_response_dataset(motor_df, home_df, possible_milestones_by_age)
+    # --- Plotting dose response from hometraining, including devices ---
+
+    df = build_dose_response_dataset(motor_df, home_df)
 
     linear_model = fit_linear_dose_response(df)
     poly_model = fit_polynomial_dose_response(df, degree=2)
@@ -458,9 +444,11 @@ if __name__ == "__main__":
 
     plot_dose_response(df, linear_model, poly_model)
 
-    # --- New analysis (active hours, devices excluded) ---
+    # --- Plotting (active hours = home training + other sports + therapies at centers), devices excluded ---
     active_df = build_active_hours_dataset(motor_df, home_df, neurohab_df, medical_df)
 
     analyze_active_hours(active_df)
+
+    # --- boxplots for medical treatments ----
 
     plot_treatment_effects(active_df)

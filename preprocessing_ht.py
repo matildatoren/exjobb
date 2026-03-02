@@ -1,5 +1,9 @@
 import polars as pl
 
+# -------------------------------------------- 
+# therapies, devices and other training as separate tables
+# --------------------------------------------
+
 # ------ helper methods for extracting data ------
 
 def extract_hometraining_hours(training):
@@ -144,11 +148,11 @@ def process_other_training_hours_per_user_per_year(df: pl.DataFrame) -> pl.DataF
 
     return df_grouped
 
-#---- extracting everything by type ----
+# -------------------------------------------- 
+# all tables together, therapies, devices and other training 
+# --------------------------------------------
 
-import polars as pl
-
-
+#---- helper method ----
 def extract_training_details(training_struct, category_name):
 
     if training_struct is None:
@@ -185,29 +189,25 @@ def extract_training_details(training_struct, category_name):
 
     return rows
 
-
+#---- extracting everything by type ----
 def process_training_per_type_per_year(df: pl.DataFrame) -> pl.DataFrame:
     all_rows = []
 
-    # ---- Extract all observed training rows ----
     for row in df.iter_rows(named=True):
 
         intro_id = row["introductory_id"]
         age = row["age"]
 
-        # HOME
         home_rows = extract_training_details(
             row.get("training_methods_therapies"),
             "home"
         )
 
-        # DEVICES
         device_rows = extract_training_details(
             row.get("devices"),
             "devices"
         )
 
-        # OTHER
         other_rows = extract_training_details(
             row.get("other_training_methods_therapies"),
             "other"
@@ -223,7 +223,6 @@ def process_training_per_type_per_year(df: pl.DataFrame) -> pl.DataFrame:
 
     result = pl.DataFrame(all_rows)
 
-    # ---- Aggregate actual observed hours ----
     result = (
         result
         .group_by([
@@ -237,25 +236,20 @@ def process_training_per_type_per_year(df: pl.DataFrame) -> pl.DataFrame:
         )
     )
 
-    # ---- Build full panel with zeros ----
 
-    # All unique training types
     all_training_types = result.select(
         ["training_category", "training_name"]
     ).unique()
 
-    # All child-year combinations
     child_years = df.select(
         ["introductory_id", "age"]
     ).unique()
 
-    # Cross join to get all combinations
     full_panel = child_years.join(
         all_training_types,
         how="cross"
     )
 
-    # Left join actual values
     result = (
         full_panel
         .join(
@@ -284,14 +278,12 @@ def process_training_per_type_per_year(df: pl.DataFrame) -> pl.DataFrame:
 
 
 if __name__ == "__main__":
-    # Import your dataloader
     from dataloader import load_data
     from connect_db import get_connection
 
     conn = get_connection()
     data = load_data(conn)
 
-    # Use the home_training table from your loader
     home_training = data["home_training"]
 
     # ---- Home training hours ----
