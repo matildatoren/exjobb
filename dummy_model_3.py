@@ -146,10 +146,10 @@ def build_active_hours_dataset(
     ) # sums all hours for each year and child to make total active hours
 
     df = df.with_columns([
-        (pl.col("home_hours") / 60).alias("home_hr"),
-        (pl.col("sports_hours") / 60).alias("sports_hr"),
-        (pl.col("neurohab_hours") / 60).alias("neurohab_hr"),
-        (pl.col("active_total") / 60).alias("active_total_hr"),
+        (pl.col("home_hours") / 60).alias("home_hours"),
+        (pl.col("sports_hours") / 60).alias("sports_hours"),
+        (pl.col("neurohab_hours") / 60).alias("neurohab_hours"),
+        (pl.col("active_total") / 60).alias("active_total"),
     ])
 
 
@@ -170,10 +170,10 @@ def analyze_active_hours(df: pd.DataFrame):
     """
 
     base_features = {
-        "home_hr": "Home training (per hour)",
-        "sports_hr": "Sports / other (per hour)",
-        "neurohab_hr": "Intensive therapy (per hour)",
-        "active_total_hr": "Combined active total (per hour)",
+        "home_hours": "Home training (per hour)",
+        "sports_hours": "Sports / other (per hour)",
+        "neurohab_hours": "Intensive therapy (per hour)",
+        "active_total": "Combined active total (per hour)",
     }
     #Makes readable namnes for the 4 different features
 
@@ -181,8 +181,8 @@ def analyze_active_hours(df: pd.DataFrame):
     known_cols = [
         "introductory_id", "age", "motorical_score_2",
         "delta_motor_score",
-        "home_hr", "sports_hr",
-        "neurohab_hr", "active_total_hr"
+        "home_hours", "sports_hours",
+        "neurohab_hours", "active_total"
     ]
 
     treatment_features = {
@@ -265,16 +265,8 @@ def plot_treatment_effects(df: pd.DataFrame):
     known_cols = [
         "introductory_id", "age", "motorical_score_2",
         "delta_motor_score", "home_hours", "sports_hours",
-        "neurohab_hours", "active_total", "home_hr", "sports_hr",
-        "neurohab_hr", "active_total_hr"
+        "neurohab_hours", "active_total"
     ]
-
-    # known_cols = [
-    #     "introductory_id", "age", "motorical_score_2",
-    #     "delta_motor_score",
-    #     "home_hr", "sports_hr",
-    #     "neurohab_hr", "active_total_hr"
-    # ]
 
     treatment_cols = [c for c in df.columns if c not in known_cols]
 
