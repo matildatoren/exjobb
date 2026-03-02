@@ -57,6 +57,10 @@ def build_dose_response_dataset(
         .fill_null(0)
     ) #Joins total hours and category hours to motor df table and puts 0 if there is no training
 
+    df = df.with_columns(
+        (pl.col("total_training_hours") / 60).alias("total_training_hours_hr")
+    )
+
     return df.to_pandas()
 
 # -------------------------------------------------------
@@ -141,6 +145,14 @@ def build_active_hours_dataset(
         ).alias("active_total")
     ) # sums all hours for each year and child to make total active hours
 
+    df = df.with_columns([
+        (pl.col("home_hours") / 60).alias("home_hr"),
+        (pl.col("sports_hours") / 60).alias("sports_hr"),
+        (pl.col("neurohab_hours") / 60).alias("neurohab_hr"),
+        (pl.col("active_total") / 60).alias("active_total_hr"),
+    ])
+
+
     return df.to_pandas()
 
 
@@ -158,18 +170,21 @@ def analyze_active_hours(df: pd.DataFrame):
     """
 
     base_features = {
-        "home_hours": "Home training",
-        "sports_hours": "Sports / other",
-        "neurohab_hours": "Intensive therapy (neurohab)",
-        "active_total": "Combined active total",
-    } #Makes readable namnes for the 4 different features
+        "home_hr": "Home training (per hour)",
+        "sports_hr": "Sports / other (per hour)",
+        "neurohab_hr": "Intensive therapy (per hour)",
+        "active_total_hr": "Combined active total (per hour)",
+    }
+    #Makes readable namnes for the 4 different features
 
     # Detect treatment columns automatically — anything not a known column
     known_cols = [
         "introductory_id", "age", "motorical_score_2",
-        "delta_motor_score", "home_hours", "sports_hours",
-        "neurohab_hours", "active_total"
+        "delta_motor_score",
+        "home_hr", "sports_hr",
+        "neurohab_hr", "active_total_hr"
     ]
+
     treatment_features = {
         col: f"Medical: {col}"
         for col in df.columns
@@ -232,7 +247,7 @@ def analyze_active_hours(df: pd.DataFrame):
             ax.plot(x_range, model.predict(x_range_df), color="orange", linewidth=2) #Plots a smooth regression line
 
         ax.axhline(0, color="gray", linewidth=0.8, linestyle=":")
-        ax.set_xlabel("Hours per year")
+        ax.set_xlabel("Training dose ((hours per year))")
         ax.set_ylabel("Delta motor score")
         ax.set_title(label)
 
@@ -399,7 +414,7 @@ def plot_dose_response(df: pd.DataFrame, linear_model, poly_model, feature: str 
     plt.plot(x_range, linear_preds, label="Linear fit", color="orange", linewidth=2)
     plt.plot(x_range, poly_preds, label="Polynomial fit (deg 2)", color="red", linewidth=2, linestyle="--")
     plt.axhline(0, color="gray", linewidth=0.8, linestyle=":")
-    plt.xlabel("Total training hours per year")
+    plt.xlabel("Total training per year")
     plt.ylabel("Delta motor score")
     plt.title("Dose-Response: Training Hours vs Motor Score Change")
     plt.legend()
@@ -428,6 +443,7 @@ if __name__ == "__main__":
     neurohab_df = process_neurohab_hours_per_user_per_age(data["intensive_therapies"])
     medical_df = process_medical_treatments_per_user_per_age(data["intensive_therapies"])
 
+
     # Optional: filter to completed surveys only
     # completed_ids = ["f9231c8d-2ade-4c0e-a878-a9524ccc3d65", "9a3aeeeb-b409-4052-af0e-27e4893fb48f", "65ab3206-7371-4471-845c-6d238050494f"]
     # motor_df = motor_df.filter(pl.col("introductory_id").is_in(completed_ids))
@@ -437,12 +453,17 @@ if __name__ == "__main__":
 
     df = build_dose_response_dataset(motor_df, home_df)
 
-    linear_model = fit_linear_dose_response(df)
-    poly_model = fit_polynomial_dose_response(df, degree=2)
+    linear_model = fit_linear_dose_response(df, feature="total_training_hours_hr")
+    poly_model = fit_polynomial_dose_response(df, feature="total_training_hours_hr", degree=2)
 
     fit_per_category(df)
 
-    plot_dose_response(df, linear_model, poly_model)
+    plot_dose_response(
+        df,
+        linear_model,
+        poly_model,
+        feature="total_training_hours_hr"
+    )
 
     # --- Plotting (active hours = home training + other sports + therapies at centers), devices excluded ---
     active_df = build_active_hours_dataset(motor_df, home_df, neurohab_df, medical_df)
