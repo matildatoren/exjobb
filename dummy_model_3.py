@@ -23,30 +23,27 @@ def build_dose_response_dataset(
     Returns a pandas DataFrame ready for regression.
     """
 
-    # Add delta motor score
-    motor_df = motor_df.sort(["introductory_id", "age"]) # Sorts motorscore by child and age
+    motor_df = motor_df.sort(["introductory_id", "age"])
     motor_df = motor_df.with_columns(
         (
             pl.col("motorical_score_2")
             - pl.col("motorical_score_2").shift(1)
-        ) # Calculates difference between two following years
-        .over("introductory_id") # For each introductory id
-        .alias("delta_motor_score") # Names the calculated variable
-    ).filter(pl.col("delta_motor_score").is_not_null()) # Removes the first year for each child. 
+        ) 
+        .over("introductory_id") 
+        .alias("delta_motor_score") 
+    ).filter(pl.col("delta_motor_score").is_not_null()) 
 
-    # Total hours across all training types per child per year
     total_hours = (
         home_df
         .group_by(["introductory_id", "age"])
         .agg(pl.sum("total_hours").alias("total_training_hours"))
-    ) #Sums all minutes per age and year and names it
+    ) 
 
-    # Also keep hours per category for breakdown analysis
     category_hours = (
         home_df
         .group_by(["introductory_id", "age", "training_category"])
-        .agg(pl.sum("total_hours").alias("hours")) #Sums hours for each category
-        .pivot(values="hours", index=["introductory_id", "age"], on="training_category") #Gives each category its own column
+        .agg(pl.sum("total_hours").alias("hours")) 
+        .pivot(values="hours", index=["introductory_id", "age"], on="training_category") 
         .fill_null(0)
     )
 
@@ -55,7 +52,7 @@ def build_dose_response_dataset(
         .join(total_hours, on=["introductory_id", "age"], how="left")
         .join(category_hours, on=["introductory_id", "age"], how="left")
         .fill_null(0)
-    ) #Joins total hours and category hours to motor df table and puts 0 if there is no training
+    )
 
     df = df.with_columns(
         (pl.col("total_training_hours") / 60).alias("total_training_hours_hr")
@@ -78,7 +75,6 @@ def build_active_hours_dataset(
     explicitly excluding devices.
     """
 
-    # Delta motor score
     motor_df = motor_df.sort(["introductory_id", "age"])
     motor_df = motor_df.with_columns(
         (
@@ -87,32 +83,28 @@ def build_active_hours_dataset(
         )
         .over("introductory_id")
         .alias("delta_motor_score")
-    ).filter(pl.col("delta_motor_score").is_not_null()) # See comment in dose response dataset
+    ).filter(pl.col("delta_motor_score").is_not_null()) 
 
-    # Home training hours only (exclude devices)
     home_hours = (
         home_df
         .filter(pl.col("training_category") == "home")
         .group_by(["introductory_id", "age"])
         .agg(pl.sum("total_hours").alias("home_hours"))
-    ) # Filters home hours and sums and name them.
+    ) 
 
-    # Sports / other training hours
     sports_hours = (
         home_df
         .filter(pl.col("training_category") == "other")
         .group_by(["introductory_id", "age"])
         .agg(pl.sum("total_hours").alias("sports_hours"))
-    ) # Filters other hours and sums and name them.
+    ) 
 
-    # Neurohabilitation center hours (sum across all centers)
     neurohab_hours = (
         neurohab_df
         .group_by(["introductory_id", "age"])
         .agg(pl.sum("total_hours").alias("neurohab_hours"))
-    )# Filters neurohab hours and sums and name them.
+    )
 
-    # Join everything onto motor scores
     df = (
         motor_df
         .join(home_hours, on=["introductory_id", "age"], how="left")
@@ -120,16 +112,15 @@ def build_active_hours_dataset(
         .join(neurohab_hours, on=["introductory_id", "age"], how="left")
         .join(medical_df, on=["introductory_id", "age"], how="left")
         .fill_null(0)
-    ) # Joins all tables and put 0 if there are no training in that category
+    )
 
-    # Combined active total
     df = df.with_columns(
         (
             pl.col("home_hours")
             + pl.col("sports_hours")
             + pl.col("neurohab_hours")
         ).alias("active_total")
-    ) # sums all hours for each year and child to make total active hours
+    ) 
 
     df = df.with_columns([
         (pl.col("home_hours") / 60).alias("home_hours"),
@@ -285,7 +276,6 @@ def print_summary(results: dict):
         print(f"  {line}")
         for t in results["treatment_results"]:
             diff_str = f"{t['mean_diff']:+.3f}"
-            name = t['col'][:27] + "…" if len(t['col']) > 28 else t['col']
             print(
                 f"  {t['col']:<28} "
                 f"{t['n_received']:>8} "
@@ -332,7 +322,6 @@ def plot_training_components(results: dict):
         ax.set_ylabel("Δ Motor score")
         ax.set_title(r["label"])
 
-        # R² annotation in top-right corner
         ax.annotate(
             f"R² = {r['r2']:.3f}\nn = {r['n']}",
             xy=(0.97, 0.97), xycoords="axes fraction",
@@ -340,7 +329,6 @@ def plot_training_components(results: dict):
             bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.7),
         )
 
-    # Hide any unused panels (safety if fewer than 4 components)
     for j in range(len(panels), 4):
         axes[j].set_visible(False)
 
@@ -381,7 +369,6 @@ def plot_treatment_effects(results: dict):
         bp["boxes"][0].set_facecolor("#AED6F1")
         bp["boxes"][1].set_facecolor("#A9DFBF")
 
-        # Sample sizes under labels
         ax.set_xticks([1, 2])
         ax.set_xticklabels(
             [f"No\n(n={len(not_received)})", f"Yes\n(n={len(received)})"]
@@ -390,7 +377,6 @@ def plot_treatment_effects(results: dict):
         ax.set_xlabel("Received treatment")
         ax.axhline(0, color="gray", linewidth=0.8, linestyle=":")
 
-        # Mean-diff annotation
         diff = received.mean() - not_received.mean()
         ax.annotate(
             f"Δ mean = {diff:+.2f}",
@@ -439,136 +425,6 @@ def plot_overall_dose_response(results: dict):
     ax.legend()
     plt.tight_layout()
     plt.savefig("overall_dose_response.png", dpi=150)
-
-# -------------------------------------------------------
-# Linear dose-response
-# -------------------------------------------------------
-
-# def fit_linear_dose_response(df: pd.DataFrame, feature: str = "total_training_hours"):
-#     """
-#     Fits a simple linear regression: delta_motor_score ~ training_hours.
-#     """
-#     subset = df[["delta_motor_score", feature]].dropna()
-#     X = subset[[feature]]
-#     y = subset["delta_motor_score"]
-
-#     model = LinearRegression()
-#     model.fit(X, y)
-
-#     preds = model.predict(X)
-#     r2 = r2_score(y, preds)
-
-#     print(f"\nLinear dose-response: delta_motor_score ~ {feature}")
-#     print(f"  Coefficient : {model.coef_[0]:.6f}")
-#     print(f"  Intercept   : {model.intercept_:.6f}")
-#     print(f"  R²          : {r2:.4f}")
-#     print(f"  n           : {len(y)}")
-
-#     return model
-
-
-# # -------------------------------------------------------
-# # Polynomial dose-response (detects plateau / threshold)
-# # -------------------------------------------------------
-
-# def fit_polynomial_dose_response(df: pd.DataFrame, feature: str = "total_training_hours", degree: int = 2):
-#     """
-#     Fits a polynomial regression to detect threshold or plateau effects.
-#     degree=2 detects a single turning point (e.g. diminishing returns).
-#     """
-#     subset = df[["delta_motor_score", feature]].dropna()
-#     X = subset[[feature]]
-#     y = subset["delta_motor_score"]
-
-#     model = make_pipeline(
-#         PolynomialFeatures(degree=degree, include_bias=False),
-#         LinearRegression()
-#     )
-#     model.fit(X, y)
-
-#     preds = model.predict(X)
-#     r2 = r2_score(y, preds)
-
-#     print(f"\nPolynomial (degree={degree}) dose-response: delta_motor_score ~ {feature}")
-#     print(f"  R²: {r2:.4f}")
-#     print(f"  n : {len(y)}")
-
-#     return model
-
-
-# # -------------------------------------------------------
-# # Per-therapy dose-response
-# # -------------------------------------------------------
-
-# def fit_per_category(df: pd.DataFrame):
-#     """
-#     Runs a linear regression for each training category separately.
-#     Useful for comparing which therapy type has the strongest dose-response.
-#     """
-#     categories = [c for c in ["home", "devices", "other"] if c in df.columns]
-
-#     results = []
-
-#     for cat in categories:
-#         subset = df[["delta_motor_score", cat]].dropna()
-#         if subset[cat].sum() == 0 or len(subset) < 5:
-#             continue
-
-#         X = subset[[cat]]
-#         y = subset["delta_motor_score"]
-
-#         model = LinearRegression()
-#         model.fit(X, y)
-#         r2 = r2_score(y, model.predict(X))
-
-#         results.append({
-#             "category": cat,
-#             "coefficient": model.coef_[0],
-#             "intercept": model.intercept_,
-#             "r2": r2,
-#             "n": len(y)
-#         })
-
-#     results_df = pd.DataFrame(results).sort_values("coefficient", ascending=False)
-
-#     print("\nPer-category dose-response:")
-#     print(results_df.to_string(index=False))
-
-#     return results_df
-
-
-# -------------------------------------------------------
-# Plot
-# -------------------------------------------------------
-
-# def plot_dose_response(df: pd.DataFrame, linear_model, poly_model, feature: str = "total_training_hours"):
-#     """
-#     Scatter plot with linear and polynomial fit overlaid.
-#     """
-#     subset = df[["delta_motor_score", feature]].dropna()
-#     X = subset[[feature]]
-#     y = subset["delta_motor_score"]
-
-#     x_range = np.linspace(X[feature].min(), X[feature].max(), 200).reshape(-1, 1)
-#     x_range_df = pd.DataFrame(x_range, columns=[feature])
-
-#     linear_preds = linear_model.predict(x_range_df)
-#     poly_preds = poly_model.predict(x_range_df)
-
-#     plt.figure(figsize=(10, 6))
-#     plt.scatter(X[feature], y, alpha=0.6, label="Observed", color="steelblue")
-#     plt.plot(x_range, linear_preds, label="Linear fit", color="orange", linewidth=2)
-#     plt.plot(x_range, poly_preds, label="Polynomial fit (deg 2)", color="red", linewidth=2, linestyle="--")
-#     plt.axhline(0, color="gray", linewidth=0.8, linestyle=":")
-#     plt.xlabel("Total training per year")
-#     plt.ylabel("Delta motor score")
-#     plt.title("Dose-Response: Training Hours vs Motor Score Change")
-#     plt.legend()
-#     plt.tight_layout()
-#     plt.savefig("dose_response_plot.png", dpi=150)
-#     plt.show()
-#     print("\nPlot saved as dose_response_plot.png")
-
 
 # -------------------------------------------------------
 # Main
