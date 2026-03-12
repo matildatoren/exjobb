@@ -19,8 +19,22 @@ def build_dose_response_dataset(
     home_df: pl.DataFrame,
 ) -> pd.DataFrame:
     """
-    Joins delta motor score with total training hours per child per year.
-    Returns a pandas DataFrame ready for regression.
+    Join delta motor score with total training hours per child per year.
+ 
+    Calculates the change in motor score between consecutive age intervals
+    and merges it with aggregated training hours — both as a total and broken
+    down by training category (wide format).
+ 
+    Args:
+        motor_df (pl.DataFrame): Motor development data with motor scores per
+            child and age.
+        home_df (pl.DataFrame): Home training data with therapy hours per child,
+            age, and training category.
+ 
+    Returns:
+        pd.DataFrame: Pandas DataFrame with one row per (child, age) containing
+            delta_motor_score, total_training_hours, total_training_hours_hr
+            (converted from minutes to hours), and one column per training category.
     """
 
     motor_df = motor_df.sort(["introductory_id", "age"])
@@ -54,6 +68,7 @@ def build_dose_response_dataset(
         .fill_null(0)
     )
 
+    # Convert total training hours from minutes to hours for interpretability
     df = df.with_columns(
         (pl.col("total_training_hours") / 60).alias("total_training_hours_hr")
     )
@@ -71,8 +86,26 @@ def build_active_hours_dataset(
     medical_df: pl.DataFrame, 
 ) -> pd.DataFrame:
     """
-    Combines home training + sports/other training + intensive therapy center hours,
-    explicitly excluding devices.
+    Combine home training, sports/other training, and intensive therapy hours.
+ 
+    Devices are explicitly excluded by filtering on training_category.
+    The result includes a summed active_total column and binary indicators
+    for medical treatments.
+ 
+    Args:
+        motor_df (pl.DataFrame): Motor development data with motor scores per
+            child and age.
+        home_df (pl.DataFrame): Home training data with therapy hours per child,
+            age, and training category.
+        neurohab_df (pl.DataFrame): Intensive therapy hours per child and age.
+        medical_df (pl.DataFrame): Binary medical treatment indicators per child
+            and age.
+ 
+    Returns:
+        pd.DataFrame: Pandas DataFrame with one row per (child, age) containing
+            delta_motor_score, component hours (home, sports, neurohab),
+            active_total (sum of all active components), and medical treatment
+            columns. All hour columns are converted from minutes to hours.
     """
 
     motor_df = motor_df.sort(["introductory_id", "age"])
@@ -122,6 +155,7 @@ def build_active_hours_dataset(
         ).alias("active_total")
     ) 
 
+    # Convert all hour columns from minutes to hours
     df = df.with_columns([
         (pl.col("home_hours") / 60).alias("home_hours"),
         (pl.col("sports_hours") / 60).alias("sports_hours"),
@@ -137,6 +171,16 @@ def build_active_hours_dataset(
 # -------------------------------------------------------
 
 def _fit_linear(X: pd.DataFrame, y: pd.Series):
+    """
+    Fit a simple linear regression model and return the model with its R² score.
+ 
+    Args:
+        X (pd.DataFrame): Feature matrix with one or more predictor columns.
+        y (pd.Series): Target variable (delta motor score).
+ 
+    Returns:
+        tuple[LinearRegression, float]: Fitted model and its in-sample R² score.
+    """
     model = LinearRegression()
     model.fit(X, y)
     r2 = r2_score(y, model.predict(X))
@@ -144,12 +188,43 @@ def _fit_linear(X: pd.DataFrame, y: pd.Series):
 
 
 def fit_linear_dose_response(df: pd.DataFrame, feature: str = "total_training_hours_hr"):
+    """
+    Fit a linear dose-response model for a given training feature.
+ 
+    Rows with missing values in either the feature or the target are dropped
+    before fitting.
+ 
+    Args:
+        df (pd.DataFrame): Dose-response dataset containing delta_motor_score
+            and the specified feature column.
+        feature (str): Name of the predictor column. Defaults to
+            "total_training_hours_hr".
+ 
+    Returns:
+        tuple[LinearRegression, float]: Fitted linear model and its R² score.
+    """
     subset = df[["delta_motor_score", feature]].dropna()
     X, y = subset[[feature]], subset["delta_motor_score"]
     return _fit_linear(X, y)
 
 
 def fit_polynomial_dose_response(df: pd.DataFrame, feature: str = "total_training_hours_hr", degree: int = 2):
+    """
+    Fit a polynomial dose-response model for a given training feature.
+ 
+    Uses a scikit-learn Pipeline combining PolynomialFeatures and
+    LinearRegression. Rows with missing values are dropped before fitting.
+ 
+    Args:
+        df (pd.DataFrame): Dose-response dataset containing delta_motor_score
+            and the specified feature column.
+        feature (str): Name of the predictor column. Defaults to
+            "total_training_hours_hr".
+        degree (int): Degree of the polynomial expansion. Defaults to 2.
+ 
+    Returns:
+        tuple[Pipeline, float]: Fitted polynomial pipeline and its R² score.
+    """
     subset = df[["delta_motor_score", feature]].dropna()
     X, y = subset[[feature]], subset["delta_motor_score"]
     model = make_pipeline(
@@ -171,12 +246,39 @@ def run_analysis(
     medical_df: pl.DataFrame,
 ) -> dict:
     """
-    Runs all regressions and collects results.
-    Returns a dict consumed by print_summary() and the plot functions.
+    Run all dose-response regressions and return the results as a dict.
+ 
+    Builds both the active-hours dataset (devices excluded) and the full
+    dose-response dataset, then fits linear regressions for each training
+    component and computes mean differences for each medical treatment.
+    Linear and polynomial overall models are also fitted.
+ 
+    Args:
+        motor_df (pl.DataFrame): Motor development data with motor scores per
+            child and age.
+        home_df (pl.DataFrame): Home training data with therapy hours per child,
+            age, and training category.
+        neurohab_df (pl.DataFrame): Intensive therapy hours per child and age.
+        medical_df (pl.DataFrame): Binary medical treatment indicators per child
+            and age.
+ 
+    Returns:
+        dict: Results dictionary consumed by print_summary() and the plot
+            functions. Keys include:
+            - "active_df": Active-hours pandas DataFrame.
+            - "dose_df": Full dose-response pandas DataFrame.
+            - "component_results": List of regression stats per training component.
+            - "treatment_results": List of mean-difference stats per treatment.
+            - "treatment_cols": List of medical treatment column names.
+            - "linear_model": Fitted overall linear model.
+            - "linear_r2": R² of the linear model.
+            - "poly_model": Fitted overall polynomial model.
+            - "poly_r2": R² of the polynomial model.
     """
     active_df = build_active_hours_dataset(motor_df, home_df, neurohab_df, medical_df)
     dose_df   = build_dose_response_dataset(motor_df, home_df)
 
+    # Identify medical treatment columns by excluding all known non-treatment columns
     known_cols = {
         "introductory_id", "age", "motorical_score_2",
         "delta_motor_score", "home_hours", "sports_hours",
@@ -240,6 +342,18 @@ def run_analysis(
     }
     
 def print_summary(results: dict):
+    """
+    Print a formatted summary of all dose-response and treatment results.
+ 
+    Outputs three sections to stdout:
+    - A regression table for each active training component (coefficient, R², N, mean hours).
+    - Overall linear vs. polynomial R² comparison for all home training.
+    - A mean-difference table for each medical treatment.
+ 
+    Args:
+        results (dict): Results dictionary as returned by run_analysis().
+    """
+
     sep  = "=" * 62
     line = "-" * 62
 
@@ -291,8 +405,17 @@ def print_summary(results: dict):
 
 def plot_training_components(results: dict):
     """
-    2×2 grid: home / sports / neurohab / combined total.
-    Each panel has a scatter + regression line + R² annotation.
+    Plot a 2×2 grid of scatter plots with regression lines per training component.
+ 
+    Each panel shows the relationship between training dose (hours/year) and
+    delta motor score for one component (home, sports, neurohab, combined).
+    Panels include a linear fit line and an R²/N annotation. Devices are excluded.
+ 
+    Args:
+        results (dict): Results dictionary as returned by run_analysis().
+ 
+    Saves:
+        training_components.png: Figure saved to the current working directory.
     """
     active_df = results["active_df"]
     panels = [r for r in results["component_results"]]
@@ -343,7 +466,17 @@ def plot_training_components(results: dict):
 
 def plot_treatment_effects(results: dict):
     """
-    One box plot per medical treatment, with sample sizes on the x-axis.
+    Plot side-by-side box plots comparing motor score change by medical treatment.
+ 
+    One panel per treatment column shows the distribution of delta motor score
+    for children who did and did not receive the treatment, along with sample
+    sizes and the mean difference annotation.
+ 
+    Args:
+        results (dict): Results dictionary as returned by run_analysis().
+ 
+    Saves:
+        treatment_effects.png: Figure saved to the current working directory.
     """
     active_df      = results["active_df"]
     treatment_cols = results["treatment_cols"]
@@ -397,7 +530,17 @@ def plot_treatment_effects(results: dict):
 
 def plot_overall_dose_response(results: dict):
     """
-    Scatter + linear + polynomial fit for total home training hours.
+    Plot observed data with overlaid linear and polynomial dose-response fits.
+ 
+    Shows how total home training hours (including devices) relate to change
+    in motor score. Both the linear and degree-2 polynomial fits are displayed
+    with their respective R² values in the legend.
+ 
+    Args:
+        results (dict): Results dictionary as returned by run_analysis().
+ 
+    Saves:
+        overall_dose_response.png: Figure saved to the current working directory.
     """
     dose_df      = results["dose_df"]
     feature      = "total_training_hours_hr"
@@ -426,6 +569,7 @@ def plot_overall_dose_response(results: dict):
     plt.tight_layout()
     plt.savefig("overall_dose_response.png", dpi=150)
 
+
 # -------------------------------------------------------
 # Main
 # -------------------------------------------------------
@@ -433,7 +577,7 @@ def plot_overall_dose_response(results: dict):
 if __name__ == "__main__":
     from dataloader import load_data
     from connect_db import get_connection
-    from preprocessing_md import process_motorical_score_2_per_user_per_age, calculate_percentile_motor_score_3
+    from preprocessing_md import process_motorical_score_2_per_user_per_age, calculate_percentile_motor_score_3, calculate_expected_milestone_score_3, process_motorical_score_1
     from preprocessing_ht import process_training_per_type_per_year
     from preprocessing_it import process_neurohab_hours_per_user_per_age, process_medical_treatments_per_user_per_age
 
