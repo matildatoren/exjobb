@@ -1,151 +1,219 @@
-import polars as pl
+import time
+
 import pandas as pd
-
+import polars as pl
+import matplotlib.pyplot as plt
+import shap
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
-from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import cross_val_score, train_test_split
+
+# Only check ids from database with complete survey
+INCLUDE_IDS = [
+    "65ab3206-7371-4471-845c-6d238050494f",
+    "9a3aeeeb-b409-4052-af0e-27e4893fb48f",
+    "a1c29f34-c3a0-4140-8398-e3d8eb980292",
+    "f9231c8d-2ade-4c0e-a878-a9524ccc3d65",
+]
+
+POSSIBLE_MILESTONES_BY_AGE = {
+    1: 12,
+    2: 19,
+    3: 25,
+    4: 31,
+    5: 36,
+    6: 39,
+    7: 41,
+}
 
 
-def add_delta_motor_score(motor_df: pl.DataFrame) -> pl.DataFrame: # Funktion som tar en Polars-dataframe med motor-data och lägger till en ny kolumn.
+def add_delta_motor_score(motor_df: pl.DataFrame) -> pl.DataFrame:
+    """
+    Add change in motor score compared with the previous age interval for each child.
 
-    motor_df = motor_df.sort(["introductory_id", "age"]) # sorterar barnens rader efter ålder (annars funkar ej shift(1))
+    Args:
+        motor_df (pl.DataFrame): DataFrame containing motor scores per child and age.
 
-    motor_df = motor_df.with_columns(
-        (
-            pl.col("motorical_score_2") # Nuvarande score
-            - pl.col("motorical_score_2").shift(1) # Score året innan (raden innan)
+    Returns:
+        pl.DataFrame: Polars DataFrame with an additional column `delta_motor_score`
+        representing the change in motorical_score_2 from the previous age interval.
+    """
+    return (
+        motor_df
+        .sort(["introductory_id", "age"])
+        .with_columns(
+            (
+                pl.col("motorical_score_2")
+                - pl.col("motorical_score_2").shift(1)
+            )
+            .over("introductory_id")
+            .alias("delta_motor_score")
         )
-        .over("introductory_id") # Ser till så att raden innan är samma barn 
-        .alias("delta_motor_score") # Döper nya kolumnen till delta_motor_score
     )
-
-    return motor_df # Returnerar med en extra kolumn
 
 
 def prepare_home_features(home_training_df: pl.DataFrame) -> pl.DataFrame:
-# Tar hemträning i “long format” (en rad per therapy-typ) och gör om till “wide format” (en kolumn per therapy-typ).
-    home_wide = (
+    """
+    Convert home training data from long to wide format.
+     Each training type becomes its own column with the total number of hours
+    for that therapy at a given age.
+
+    Args:
+        home_training_df (pl.DataFrame): Long-format DataFrame with one row per
+        child, age, and training type.
+
+    Returns:
+        pl.DataFrame: Wide-format Polars DataFrame with one row per
+        (introductory_id, age) and one column per training type.
+    """
+    return (
         home_training_df
-        .with_columns( # Added to include all therapies even if there are duplicates in therapy at home
+        .with_columns(
             (pl.col("training_category") + "_" + pl.col("training_name"))
             .alias("training_name")
-        ) # skriver över kolumnen training_name med ett nytt kombinerat namn.
-        .pivot(
-            values="total_hours", # Cellvärdet
-            index=["introductory_id", "age"], # Detta blir raderna
-            on="training_name" # Detta blir kolumnerna
         )
-        .fill_null(0) # Om det ej finns nåt, lägg en nolla
+        .pivot(
+            values="total_hours",
+            index=["introductory_id", "age"],
+            on="training_name",
+        )
+        .fill_null(0)
     )
 
-    return home_wide
 
+def build_ml_dataset(motor_df: pl.DataFrame, home_df: pl.DataFrame) -> pl.DataFrame:
+    """
+    Combine motor development data with home training data into a single
+    machine learning dataset.
 
-def build_ml_dataset(motor_df, home_df): # Tar motor-data och home-training-data och gör en ML-tabell.
+    The function calculates delta_motor_score and joins the motor data with
+    home training features.
 
-    motor_df = add_delta_motor_score(motor_df)
+    Args:
+        motor_df (pl.DataFrame): Motor development data with motor scores per child and age.
+        home_df (pl.DataFrame): Home training data with therapy hours per child and age.
+
+    Returns:
+        pl.DataFrame: Polars DataFrame containing motor scores, delta_motor_score,
+        and home training features for each child and age.
+    """    
+    motor_with_delta = add_delta_motor_score(motor_df)
     home_wide = prepare_home_features(home_df)
 
-    df = motor_df.join(
-        home_wide,
-        on=["introductory_id", "age"],
-        how="left" # Behåll alla motor-rader även om home saknas.
-    ).fill_null(0) # Om home-träning saknas → anta 0 timmar.
-
-    df = df.filter(pl.col("delta_motor_score").is_not_null())
-    # Tar bort första året per barn (där delta blir null eftersom det inte finns något “föregående år” att jämföra med).
-    return df
-
-def train_model(polars_df): # Tränar modellen på den färdiga ML tabellen
-
-    import time # För att mäta träningstid
-
-    df = polars_df.to_pandas() # Sklearn jobbar lättast med pandas/numpy.
-
-    #Ändra här för att välja vilka surveys som används när man tränar
-    include_ids = ["65ab3206-7371-4471-845c-6d238050494f", 
-                    "9a3aeeeb-b409-4052-af0e-27e4893fb48f", 
-                    "a1c29f34-c3a0-4140-8398-e3d8eb980292", 
-                    "f9231c8d-2ade-4c0e-a878-a9524ccc3d65"]  
-    df = df[df["introductory_id"].isin(include_ids)]
-    print(f"Using {len(df)} rows from {len(include_ids)} participants")
+    return (
+        motor_with_delta
+        .join(home_wide, on=["introductory_id", "age"], how="left")
+        .fill_null(0)
+        .filter(pl.col("delta_motor_score").is_not_null())
+    )
 
 
-    y = df["delta_motor_score"] # Target = förändring i motor score. Modellen försöker lära sig prediktera den kolumnen.
+def train_model(polars_df: pl.DataFrame) -> RandomForestRegressor:
+    """
+    Train a Random Forest model to predict change in motor score.
 
-    X = df.drop( # Features = allt utom det i lastan nedan
+    The model uses therapy hours as features and delta_motor_score as the target.
+    Cross-validation is performed to estimate model performance.
+
+    Args:
+        polars_df (pl.DataFrame): Machine learning dataset containing motor scores
+        and training features.
+
+    Returns:
+        RandomForestRegressor: Trained Random Forest model.
+    """
+    df = polars_df.to_pandas()
+    df = df[df["introductory_id"].isin(INCLUDE_IDS)]
+
+    print(f"Using {len(df)} rows from {len(INCLUDE_IDS)} participants")
+
+    y = df["delta_motor_score"]
+    X = df.drop(
         columns=[
             "introductory_id",
             "age",
             "motorical_score_2",
-            "delta_motor_score"
+            "delta_motor_score",
         ]
     )
 
-    X_train, X_test, y_train, y_test = train_test_split( # 80% train
-        X, y, test_size=0.2, random_state=42 
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
     )
 
     model = RandomForestRegressor(
         n_estimators=100,
-        max_depth=3,         
-        min_samples_leaf=5,   
+        max_depth=3,
+        min_samples_leaf=5,
         random_state=42,
-        n_jobs=-1
+        n_jobs=-1,
     )
 
-
-    scores = cross_val_score(model, X, y, cv=5, scoring="r2") # 5 fold cross validation på hela X,y. Tränar 5 gngr och ger 5 R2 värden
-    print("\nDataset evaluation:")
+    scores = cross_val_score(model, X, y, cv=5, scoring="r2")
+    print("\nDataset evaluation")
     print("CV R² scores:", scores)
     print("Mean R²:", scores.mean())
 
-    print("\nTraining model...") # Här lär sig modellen sambandet mellan therapy-timmar och delta-motor
+    print("\nTraining model...")
     start_time = time.time()
-
-    model.fit(X_train, y_train) # Modellen försöker hitta: f(therapy hours)≈ Δ motorscore
-
+    model.fit(X_train, y_train)
     end_time = time.time()
-    print(f"\nTraining took {end_time - start_time:.2f} seconds")
-
-
+    print(f"Training took {end_time - start_time:.2f} seconds")
+   
     importance = pd.Series(
-        model.feature_importances_, # Hur viktiga features var (baserat på hur mycket de minskade impurity). Vad som hjälpte mest i prediktionen
-
-        index=X.columns
+        model.feature_importances_,
+        index=X.columns,
     ).sort_values(ascending=False)
 
-    print("\nTop 10 most important features:\n")
+    print("\nTop 10 most important features:")
     print(importance.head(10))
+
+    # ---------------------------
+    # SHAP analysis
+    # ---------------------------
+    print("\nCalculating SHAP values...")
+
+    explainer = shap.TreeExplainer(model)
+    shap_values = explainer(X)
+
+    # Summary plot:  negativt värde → minskar Δ motor score. positivt värde → ökar Δ motor score
+    # Hur modellen beter sig över hela datasetet. Visar vilka features som är viktiga i modellen generellt
+    plt.figure()
+    shap.plots.beeswarm(shap_values, max_display=10, show=False)
+    plt.tight_layout()
+    plt.savefig("shap_summary_plot.png", dpi=300, bbox_inches="tight")
+    plt.show()
+
+    # Waterfall plot for first sample in training set
+    # Hur modellen beter sig för en specifik prediktion. Varför modellen gjorde just den prediktionen för detta barn & år
+    shap.plots.waterfall(shap_values[0], max_display=10, show=False)
+    plt.tight_layout()
+    plt.savefig("shap_waterfall_plot.png", dpi=300, bbox_inches="tight")
+    plt.show()
 
     return model
 
 
-
-if __name__ == "__main__":
-
-    from dataloader import load_data
+def main() -> None:
+    """
+    Load data, preprocess it, build the machine learning dataset,
+    and train the model.
+    """
     from connect_db import get_connection
-    from preprocessing_md import process_motorical_score_2_per_user_per_age
+    from dataloader import load_data
     from preprocessing_ht import process_training_per_type_per_year
+    from preprocessing_md import process_motorical_score_2_per_user_per_age
 
-# Hämtar data från databasen
-    conn = get_connection() 
+    conn = get_connection()
     data = load_data(conn)
 
-    possible_milestones_by_age = {
-        1: 12,
-        2: 19,
-        3: 25,
-        4: 31,
-        5: 36,
-        6: 39,
-        7: 41
-    }
-# Skapar 2 tabeller. 
-    motor_df = process_motorical_score_2_per_user_per_age(data["motorical_development"], possible_milestones_by_age) #en rad per barn+ålder med motorical_score_2
-    home_df = process_training_per_type_per_year(data["home_training"]) # En rad per barn+ålder+training med total_hours
+    motor_df = process_motorical_score_2_per_user_per_age(
+        data["motorical_development"]
+    )
+    home_df = process_training_per_type_per_year(data["home_training"])
 
-    ml_df = build_ml_dataset(motor_df, home_df) # Joinar ihop o skapar delta
+    ml_df = build_ml_dataset(motor_df, home_df)
+    train_model(ml_df)
 
-    model = train_model(ml_df) # Tränar modellen
+
+if __name__ == "__main__":
+    main()
