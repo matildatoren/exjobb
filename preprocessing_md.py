@@ -320,8 +320,6 @@ if __name__ == "__main__":
         introductory_df=data["introductory"]
     )
 
-    print("\nMotorical score per introductory_id per age:\n")
-    print(score1)
 
     # -------- Slå ihop allt --------
     final_table = (
