@@ -13,13 +13,14 @@ conn = get_connection()
 
 @st.cache_data(ttl=60)
 def load_data():
+    users = pd.read_sql("SELECT * FROM users", conn)
     intro = pd.read_sql("SELECT * FROM introductory", conn)
     ht = pd.read_sql("SELECT * FROM home_training", conn)
     it = pd.read_sql("SELECT * FROM intensive_therapies", conn)
     md = pd.read_sql("SELECT * FROM motorical_development", conn)
-    return intro, ht, it, md
+    return users, intro, ht, it, md
 
-intro, ht, it, md = load_data()
+users, intro, ht, it, md = load_data()
 
 # Merge GMFCS into motor table
 md = md.merge(
@@ -347,6 +348,25 @@ with tab2:
 
     st.subheader("Motor Development")
     st.dataframe(md_filtered)
+
+    st.subheader("Users")
+    st.dataframe(users)
+
+    st.subheader("User ID ↔ Introductory ID Mapping")
+    users_map = users[["id", "email_cryp", "created_at"]].rename(columns={"id": "user_id"}).copy()
+    intro_map = intro_filtered[["id", "user_id"]].rename(columns={"id": "introductory_id"}).copy()
+ 
+    users_map["user_id"] = users_map["user_id"].astype(str)
+    intro_map["user_id"] = intro_map["user_id"].astype(str)
+ 
+    id_map = (
+        users_map
+        .merge(intro_map, on="user_id", how="left")
+        [["user_id", "email_cryp", "created_at", "introductory_id"]]
+        .sort_values("user_id")
+        .reset_index(drop=True)
+    )
+    st.dataframe(id_map, use_container_width=True)
 
 # =====================================================
 # COMPLETENESS (existing simple view kept)

@@ -1,5 +1,10 @@
 import polars as pl
 
+import sys
+from pathlib import Path
+
+sys.path.append(str(Path(__file__).resolve().parents[1]))
+
 # --- helper method ----
 def extract_neurohab_center_hours(struct):
     if struct is None:
