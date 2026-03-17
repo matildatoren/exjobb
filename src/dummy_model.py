@@ -4,6 +4,7 @@ import pandas as pd
 import polars as pl
 import matplotlib.pyplot as plt
 import shap
+from pathlib import Path
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import cross_val_score, train_test_split
 
@@ -24,6 +25,9 @@ POSSIBLE_MILESTONES_BY_AGE = {
     6: 39,
     7: 41,
 }
+
+BASE_DIR = Path(__file__).resolve().parent.parent  
+IMAGES_DIR = BASE_DIR / "images"
 
 
 def add_delta_motor_score(motor_df: pl.DataFrame) -> pl.DataFrame:
@@ -180,14 +184,14 @@ def train_model(polars_df: pl.DataFrame) -> RandomForestRegressor:
     plt.figure()
     shap.plots.beeswarm(shap_values, max_display=10, show=False)
     plt.tight_layout()
-    plt.savefig("shap_summary_plot.png", dpi=300, bbox_inches="tight")
+    plt.savefig(IMAGES_DIR / "shap_summary_plot.png", dpi=300, bbox_inches="tight")
     plt.show()
 
     # Waterfall plot for first sample in training set
     # Hur modellen beter sig för en specifik prediktion. Varför modellen gjorde just den prediktionen för detta barn & år
     shap.plots.waterfall(shap_values[0], max_display=10, show=False)
     plt.tight_layout()
-    plt.savefig("shap_waterfall_plot.png", dpi=300, bbox_inches="tight")
+    plt.savefig(IMAGES_DIR / "shap_waterfall_plot.png", dpi=300, bbox_inches="tight")
     plt.show()
 
     return model
@@ -200,8 +204,8 @@ def main() -> None:
     """
     from connect_db import get_connection
     from dataloader import load_data
-    from preprocessing_ht import process_training_per_type_per_year
-    from preprocessing_md import process_motorical_score_2_per_user_per_age
+    from preprocessing.preprocessing_ht import process_training_per_type_per_year
+    from preprocessing.preprocessing_md import process_motorical_score_2_per_user_per_age
 
     conn = get_connection()
     data = load_data(conn)
