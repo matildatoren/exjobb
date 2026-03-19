@@ -281,12 +281,27 @@ tab1, tab2, tab3 = st.tabs(
 with tab1:
     st.title("Survey Overview")
 
+    from datetime import date, timedelta
+
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+
+    intro["_date"] = pd.to_datetime(intro["created_at"]).dt.date
+
     total = len(intro)
+    total_yesterday = (intro["_date"] <= yesterday).sum()
+    delta_total = total - total_yesterday
+
     completed = intro["completed"].sum() if "completed" in intro else 0
+    completed_yesterday = (
+        intro[intro["_date"] <= yesterday]["completed"].sum()
+        if "completed" in intro.columns else 0
+    )
+    delta_completed = completed - completed_yesterday
 
     col1, col2 = st.columns(2)
-    col1.metric("Total participants", total)
-    col2.metric("Completed surveys", completed)
+    col1.metric("Total participants", total, delta=int(delta_total))
+    col2.metric("Completed surveys", int(completed), delta=int(delta_completed))
 
     st.subheader("Responses over time")
 
@@ -305,11 +320,41 @@ with tab1:
 
     progress = compute_progress_percent(intro, ht, it, md)
 
+    # --- Compute latest entry across all tables ---
+    def latest_created_at(df, id_col="introductory_id"):
+        if "created_at" not in df.columns or id_col not in df.columns:
+            return pd.DataFrame(columns=["id", "latest_entry"])
+        return (
+            df.groupby(id_col)["created_at"]
+            .max()
+            .reset_index()
+            .rename(columns={id_col: "id", "created_at": "latest_entry"})
+        )
+
+    intro_latest = latest_created_at(intro, id_col="id")
+    ht_latest    = latest_created_at(ht)
+    it_latest    = latest_created_at(it)
+    md_latest    = latest_created_at(md)
+
+    all_latest = (
+        pd.concat([intro_latest, ht_latest, it_latest, md_latest], ignore_index=True)
+        .groupby("id")["latest_entry"]
+        .max()
+        .reset_index()
+    )
+    all_latest["latest_entry"] = pd.to_datetime(all_latest["latest_entry"]).dt.date
+    # --- End latest entry ---
+
     overview_people = intro[cols_to_show].merge(
         progress[["id", "progress_pct", "n_years"]],
         on="id",
         how="left"
+    ).merge(
+        all_latest,
+        on="id",
+        how="left"
     )
+
     overview_people["progress_pct"] = overview_people["progress_pct"].fillna(0).round(1)
     overview_people["n_years"] = overview_people["n_years"].fillna(0).astype(int)
 
@@ -325,11 +370,11 @@ with tab1:
         "id": "Intro ID",
         "progress_pct": "Progress (%)",
         "n_years": "Years observed",
+        "latest_entry": "Latest Entry",
     }
     overview_people = overview_people.rename(columns={k: v for k, v in rename_map.items() if k in overview_people.columns})
 
     st.dataframe(overview_people, use_container_width=True)
-
 
 
 # =====================================================
