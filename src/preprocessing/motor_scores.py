@@ -14,7 +14,7 @@ def motorscore_milestones_setvalue(df: pl.DataFrame) -> pl.DataFrame:
     MotorScore = (kumulativt antal unika milestones hittills) / (möjliga milestones vid den åldern)
     Returnerar 0..1 per (introductory_id, age).
     """
-    possible_milestones_by_age = {1: 12, 2: 19, 3: 25, 4: 31, 5: 36, 6: 39, 7: 41}
+    possible_milestones_by_age = {1: 12, 2: 19, 3: 25, 4: 31, 5: 36, 6: 39, 7: 41, 8:41, 9:41}
 
     # --- Steg 1: Extrahera milestone-nycklar per rad ---
     gross_list = df["gross_motor_development"].to_list()
@@ -24,6 +24,8 @@ def motorscore_milestones_setvalue(df: pl.DataFrame) -> pl.DataFrame:
         sorted(extract_milestone_keys(g) | extract_milestone_keys(f))
         for g, f in zip(gross_list, fine_list)
     ]
+
+    df = df.with_columns(pl.Series("milestone_keys", per_row_keys))
 
     # --- Steg 2: Aggregera unika milestones per (user, age) ---
     per_age = (
@@ -209,8 +211,53 @@ def motorscore_impairments_setvalue(
 
 
 # normaliserat över alla i den åldersklassen
-def motorscore_milestones() -> float:
-    print("hej")
+def motorscore_milestones(df: pl.DataFrame) -> pl.DataFrame:
+    """
+    MotorScore = cum_unique_milestones / max(cum_unique_milestones) inom åldersgruppen
+    Returnerar 0..1 per (introductory_id, age).
+    """
+
+    # --- Steg 1–3: identiska med motorscore_milestones_setvalue ---
+    per_row_keys = [
+        sorted(extract_milestone_keys(g) | extract_milestone_keys(f))
+        for g, f in zip(df["gross_motor_development"].to_list(), df["fine_motor_development"].to_list())
+    ]
+
+    df = df.with_columns(pl.Series("milestone_keys", per_row_keys))
+
+    per_age = (
+        df.group_by(["introductory_id", "age"])
+        .agg(
+            pl.col("milestone_keys").explode().drop_nulls().unique().alias("milestone_keys_age")
+        )
+        .sort(["introductory_id", "age"])
+    )
+
+    def _cumulate(group: pl.DataFrame) -> pl.DataFrame:
+        group = group.sort("age")
+        seen: set[str] = set()
+        cum_counts: list[int] = []
+        for keys in group["milestone_keys_age"].to_list():
+            cleaned = [k for k in (keys or []) if k is not None and str(k).strip() not in ("", "none")]
+            seen |= set(cleaned)
+            cum_counts.append(len(seen))
+        return group.with_columns(pl.Series("cum_unique_milestones", cum_counts))
+
+    cum = per_age.group_by("introductory_id").map_groups(_cumulate)
+
+    # --- Steg 4: Normalisera mot max inom åldersgruppen ---
+    return (
+        cum.with_columns(
+            pl.col("cum_unique_milestones").mean().over("age").alias("mean_in_age")
+        )
+        .with_columns(
+            (pl.col("cum_unique_milestones") / pl.col("mean_in_age"))
+            .cast(pl.Float64)
+            .alias("milestone_score")
+        )
+        .select(["introductory_id", "age", "cum_unique_milestones", "milestone_score"])
+        .sort(["introductory_id", "age"])
+    )
 
 def motorscore_impairments() -> float:
     print("hej")
@@ -235,6 +282,10 @@ if __name__ == "__main__":
 
     motorical_dev = data["motorical_development"]
 
-    impairmentsSetValue = motorscore_impairments_setvalue(motorical_dev)
-
-    print(impairmentsSetValue)
+    milestonevalue1 = motorscore_milestones_setvalue(motorical_dev)
+    milestonesvalue2 = motorscore_milestones(motorical_dev)
+    print('första scoret')
+    print(milestonevalue1)
+    print('andra scoret')
+    print(milestonesvalue2)
+  
