@@ -321,11 +321,161 @@ def motorscore_impairments(
 
 
 # normaliserat över alla i den åldersklassen och gmfcs nivån
-def motorscore_milestones_future() -> float:
-    print("hej")
+def motorscore_milestones_future(
+    df: pl.DataFrame,
+    introductory_df: pl.DataFrame,
+) -> pl.DataFrame:
+    """
+    MotorScore = cum_unique_milestones / mean(cum_unique_milestones) inom (age, gmfcs_lvl)
+    Värden > 1 indikerar fler milstolpar än genomsnittet för åldersgrupp + GMFCS-nivå.
+    """
 
-def motorscore_impairments_future() -> float:
-    print("hej")
+    # --- Steg 1–3: identiska med motorscore_milestones ---
+    per_row_keys = [
+        sorted(extract_milestone_keys(g) | extract_milestone_keys(f))
+        for g, f in zip(df["gross_motor_development"].to_list(), df["fine_motor_development"].to_list())
+    ]
+
+    df = df.with_columns(pl.Series("milestone_keys", per_row_keys))
+
+    per_age = (
+        df.group_by(["introductory_id", "age"])
+        .agg(
+            pl.col("milestone_keys").explode().drop_nulls().unique().alias("milestone_keys_age")
+        )
+        .sort(["introductory_id", "age"])
+    )
+
+    def _cumulate(group: pl.DataFrame) -> pl.DataFrame:
+        group = group.sort("age")
+        seen: set[str] = set()
+        cum_counts: list[int] = []
+        for keys in group["milestone_keys_age"].to_list():
+            cleaned = [k for k in (keys or []) if k is not None and str(k).strip() not in ("", "none")]
+            seen |= set(cleaned)
+            cum_counts.append(len(seen))
+        return group.with_columns(pl.Series("cum_unique_milestones", cum_counts))
+
+    cum = per_age.group_by("introductory_id").map_groups(_cumulate)
+
+    # --- Steg 4: Joina in GMFCS och normalisera mot medelvärde inom (age, gmfcs_lvl) ---
+    return (
+        cum.join(
+            introductory_df.select([pl.col("id").alias("introductory_id"), "gmfcs_lvl"]),
+            on="introductory_id",
+            how="left"
+        )
+        .with_columns(
+            pl.col("cum_unique_milestones").mean().over(["age", "gmfcs_lvl"]).alias("mean_in_age_gmfcs")
+        )
+        .with_columns(
+            (pl.col("cum_unique_milestones") / pl.col("mean_in_age_gmfcs"))
+            .cast(pl.Float64)
+            .alias("milestone_score")
+        )
+        .select(["introductory_id", "age", "gmfcs_lvl", "cum_unique_milestones", "milestone_score"])
+        .sort(["introductory_id", "age"])
+    )
+
+# impairment score normaliserat över ålder och gmfcs
+def motorscore_impairments_future(
+    df: pl.DataFrame,
+    introductory_df: pl.DataFrame,
+    upper_col: str = "motorical_impairments_upper",
+    lower_col: str = "motorical_impairments_lower",
+) -> pl.DataFrame:
+    """
+    ImpairmentScore = mms / mean(mms) inom (age, gmfcs_lvl)
+    Värden > 1 indikerar lägre grad av nedsättning än genomsnittet för åldersgrupp + GMFCS-nivå.
+    """
+
+    def _n_named(age: float) -> int:
+        if age < 1:   return 9
+        elif age < 2: return 16
+        elif age < 3: return 17
+        else:         return 18
+
+    # --- Steg 1–2: identiska med motorscore_impairments ---
+    upper_list = df[upper_col].to_list()
+    lower_list = df[lower_col].to_list()
+
+    row_sum_ratings: list[float] = []
+    row_other_keys: list[list[str]] = []
+
+    for u, lo in zip(upper_list, lower_list):
+        row_sum_ratings.append(sum_impairments(u) + sum_impairments(lo))
+        all_keys = extract_milestone_keys(u) | extract_milestone_keys(lo)
+        others = sorted(k for k in all_keys if "other" in k.lower())
+        row_other_keys.append(others)
+
+    df2 = df.with_columns([
+        pl.Series("_sum_ratings", row_sum_ratings),
+        pl.Series("_other_keys", row_other_keys),
+    ])
+
+    per_age = (
+        df2.group_by(["introductory_id", "age"])
+        .agg([
+            pl.col("_sum_ratings").sum().alias("sum_ratings"),
+            pl.col("_other_keys").explode().drop_nulls().unique().alias("other_keys_age"),
+        ])
+        .sort(["introductory_id", "age"])
+    )
+
+    ages       = per_age["age"].to_list()
+    other_keys = per_age["other_keys_age"].to_list()
+
+    n_named_list  : list[int]   = []
+    n_other_list  : list[int]   = []
+    n_total_list  : list[int]   = []
+    max_score_list: list[int]   = []
+    mms_list      : list[float] = []
+
+    for age, o_keys, s_ratings in zip(ages, other_keys, per_age["sum_ratings"].to_list()):
+        n_named  = _n_named(float(age))
+        n_other  = len(o_keys) if o_keys else 0
+        n_total  = n_named + n_other
+        max_sc   = n_total * 5
+        mms      = max_sc - s_ratings
+
+        n_named_list.append(n_named)
+        n_other_list.append(n_other)
+        n_total_list.append(n_total)
+        max_score_list.append(max_sc)
+        mms_list.append(float(mms))
+
+    per_age = per_age.with_columns([
+        pl.Series("n_named",   n_named_list),
+        pl.Series("n_other",   n_other_list),
+        pl.Series("n_total",   n_total_list),
+        pl.Series("max_score", max_score_list),
+        pl.Series("mms",       mms_list),
+    ])
+
+    # --- Steg 3: Joina in GMFCS och normalisera mot medelvärde inom (age, gmfcs_lvl) ---
+    return (
+        per_age.join(
+            introductory_df.select([pl.col("id").alias("introductory_id"), "gmfcs_lvl"]),
+            on="introductory_id",
+            how="left"
+        )
+        .with_columns(
+            pl.col("mms").mean().over(["age", "gmfcs_lvl"]).alias("mean_mms_age_gmfcs")
+        )
+        .with_columns(
+            pl.when(pl.col("mean_mms_age_gmfcs") > 0)
+            .then(pl.col("mms") / pl.col("mean_mms_age_gmfcs"))
+            .otherwise(None)
+            .cast(pl.Float64)
+            .alias("mms_normalized")
+        )
+        .select([
+            "introductory_id", "age", "gmfcs_lvl",
+            "sum_ratings", "n_other", "n_named", "n_total",
+            "max_score", "mms", "mean_mms_age_gmfcs", "mms_normalized",
+        ])
+        .sort(["introductory_id", "age"])
+    )
 
 # kombinerat score 
 def motorscore_combined(imScore: float, moScore: float) -> float:

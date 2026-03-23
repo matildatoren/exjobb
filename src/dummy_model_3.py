@@ -47,7 +47,7 @@ def build_dose_response_dataset(
 
     motor_df = motor_df.sort(["introductory_id", "age"])
     motor_df = motor_df.with_columns(
-        (pl.col("motorical_score_2") - pl.col("motorical_score_2").shift(1))
+        (pl.col("milestone_score") - pl.col("milestone_score").shift(1))
         .over("introductory_id")
         .alias("delta_motor_score")
     ).filter(pl.col("delta_motor_score").is_not_null())
@@ -113,7 +113,7 @@ def build_active_hours_dataset(
 
     motor_df = motor_df.sort(["introductory_id", "age"])
     motor_df = motor_df.with_columns(
-        (pl.col("motorical_score_2") - pl.col("motorical_score_2").shift(1))
+        (pl.col("milestone_score") - pl.col("milestone_score").shift(1))
         .over("introductory_id")
         .alias("delta_motor_score")
     ).filter(pl.col("delta_motor_score").is_not_null())
@@ -283,7 +283,7 @@ def run_analysis(
     known_cols = {
         "introductory_id",
         "age",
-        "motorical_score_2",
+        "milestone_score",
         "delta_motor_score",
         "home_hours",
         "sports_hours",
@@ -617,6 +617,10 @@ if __name__ == "__main__":
         calculate_expected_milestone_score_3,
         process_motorical_score_1,
     )
+    from preprocessing.motor_scores import (
+        motorscore_milestones_setvalue,
+        motorscore_milestones,
+    )
     from preprocessing.preprocessing_ht import process_training_per_type_per_year
     from preprocessing.preprocessing_it import (
         process_neurohab_hours_per_user_per_age,
@@ -626,7 +630,7 @@ if __name__ == "__main__":
     conn = get_connection()
     data = load_data(conn)
 
-    motor_df = process_motorical_score_2_per_user_per_age(data["motorical_development"])
+    motor_df = motorscore_milestones(data["motorical_development"])
     home_df = process_training_per_type_per_year(data["home_training"])
     neurohab_df = process_neurohab_hours_per_user_per_age(data["intensive_therapies"])
     medical_df = process_medical_treatments_per_user_per_age(
