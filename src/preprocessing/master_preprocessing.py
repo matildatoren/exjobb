@@ -11,20 +11,13 @@ sys.path.append(str(ROOT))
 
 from preprocessing.preprocessing_ht import (
     process_home_training_hours_per_user_per_year,
-    process_device_hours_per_user_per_year,
     process_other_training_hours_per_user_per_year,
-    process_training_per_type_per_year,
 )
 from preprocessing.preprocessing_it import (
     process_neurohab_hours_per_user_per_age,
     process_medical_treatments_per_user_per_age,
 )
-# from preprocessing.preprocessing_md import (
-#     process_motorical_score_1,
-#     process_motorical_score_2_per_user_per_age,
-#     calculate_percentile_motor_score_3,
-#     calculate_expected_milestone_score_3,
-# )
+
 from preprocessing.motor_scores import (
     motorscore_milestones_setvalue,
     motorscore_impairments_setvalue,
@@ -138,49 +131,6 @@ def _build_device_binary(home_training_df: pl.DataFrame) -> pl.DataFrame:
     return wide.sort(["introductory_id", "age"])
 
 
-# # ════════════════════════════════════════════════════════════════════════════
-# # Granular training-type count
-# # ════════════════════════════════════════════════════════════════════════════
-
-# def _build_n_unique_training_types(
-#     training_per_type_df: pl.DataFrame,
-# ) -> pl.DataFrame:
-#     """
-#     Count the number of distinct training types with > 0 hours, per child per year.
-#     """
-#     return (
-#         training_per_type_df
-#         .filter(pl.col("total_hours") > 0)
-#         .group_by(["introductory_id", "age"])
-#         .agg(pl.len().alias("n_unique_training_types"))
-#         .sort(["introductory_id", "age"])
-#     )
-
-
-# # ════════════════════════════════════════════════════════════════════════════
-# # Motor score helpers
-# # ════════════════════════════════════════════════════════════════════════════
-
-# def _add_delta_and_lag(motor_df: pl.DataFrame) -> pl.DataFrame:
-#     """
-#     Add delta_motor_score and lag_motor_score_2 to the motor table.
-#     """
-#     return (
-#         motor_df
-#         .sort(["introductory_id", "age"])
-#         .with_columns(
-#             pl.col("motorical_score_2")
-#             .shift(1)
-#             .over("introductory_id")
-#             .alias("lag_motor_score_2")
-#         )
-#         .with_columns(
-#             (pl.col("motorical_score_2") - pl.col("lag_motor_score_2"))
-#             .alias("delta_motor_score")
-#         )
-#     )
-
-
 # ════════════════════════════════════════════════════════════════════════════
 # Medical treatment helpers
 # ════════════════════════════════════════════════════════════════════════════
@@ -263,53 +213,23 @@ def _build_motor_table(motorical_dev: pl.DataFrame) -> pl.DataFrame:
         .sort(["introductory_id", "age"])
     )
  
-    # ── delta and lag on milestone_score_setvalue ───────────────────────────
-    motor = (
-        motor
-        .with_columns(
-            (
-                pl.col("milestone_score_setvalue")
-                - pl.col("milestone_score_setvalue").shift(1).over("introductory_id")
-            )
-            .alias("delta_milestone_score")
-        )
-    )
- 
+    # ── delta for every motor score ─────────────────────────────────────────
+    score_cols = [
+        "milestone_score_setvalue",
+        "milestone_score",
+        "impairment_score_setvalue",
+        "impairment_score",
+    ]
+
+    motor = motor.with_columns([
+        (
+            pl.col(c) - pl.col(c).shift(1).over("introductory_id")
+        ).alias(f"delta_{c}")
+        for c in score_cols
+    ])
+    
     return motor
  
- 
-
-
-# # ════════════════════════════════════════════════════════════════════════════
-# # Training-type wide table
-# # ════════════════════════════════════════════════════════════════════════════
-
-# def _pivot_training_types(training_per_type_df: pl.DataFrame) -> pl.DataFrame:
-#     """
-#     Pivot granular training data from long to wide.
-#     Columns are prefixed with "ht_" to avoid clashes.
-#     """
-#     wide = (
-#         training_per_type_df
-#         .with_columns(
-#             (
-#                 "ht_"
-#                 + pl.col("training_category")
-#                 + "_"
-#                 + pl.col("training_name")
-#             ).alias("col_name")
-#         )
-#         .pivot(
-#             values="total_hours",
-#             index=["introductory_id", "age"],
-#             on="col_name",
-#             aggregate_function="sum",
-#         )
-#         .fill_null(0)
-#     )
-#     return wide.sort(["introductory_id", "age"])
-
-
 # ════════════════════════════════════════════════════════════════════════════
 # Master builder
 # ════════════════════════════════════════════════════════════════════════════
@@ -402,7 +322,7 @@ def get_feature_groups(master_df: pl.DataFrame) -> dict[str, list[str]]:
  
     return {
         "id": ["introductory_id", "age"],
-        "gmfcs": [c for c in ["gmfcs_lvl", "gmfcs_int"] if c in cols],
+        "gmfcs": [c for c in ["gmfcs_int"] if c in cols],
         "training_hours": [c for c in [
             "total_home_training_hours",
             "total_other_training_hours",
@@ -422,11 +342,13 @@ def get_feature_groups(master_df: pl.DataFrame) -> dict[str, list[str]]:
             "impairment_score",
         ] if c in cols],
         "targets": [c for c in [
+            "delta_milestone_score_setvalue",
             "delta_milestone_score",
+            "delta_impairment_score_setvalue",
+            "delta_impairment_score",
         ] if c in cols],
     }
  
-
 
 # ════════════════════════════════════════════════════════════════════════════
 # Quick sanity-check
