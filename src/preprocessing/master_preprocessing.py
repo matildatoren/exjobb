@@ -112,7 +112,10 @@ def _build_device_binary(home_training_df: pl.DataFrame) -> pl.DataFrame:
     wide = wide.rename({c: f"device_{c}" for c in device_cols})
 
     # Aggregate: has any device that year?
-    device_cols_renamed = [c for c in wide.columns if c.startswith("device_")]
+    device_cols_renamed = [
+        c for c in wide.columns
+        if c.startswith("device_") and c.lower() != "device_none"
+    ]
     wide = wide.with_columns(
         pl.when(
             pl.fold(
@@ -142,9 +145,13 @@ def _prefix_medical_cols(medical_df: pl.DataFrame) -> pl.DataFrame:
     treatment_cols = [
         c for c in medical_df.columns if c not in ("introductory_id", "age")
     ]
+
     df = medical_df.rename({c: f"med_{c}" for c in treatment_cols})
 
-    med_cols = [c for c in df.columns if c.startswith("med_")]
+    med_cols = [
+        c for c in df.columns
+        if c.startswith("med_") and c.lower() not in ("med_no", "med_none", "med_nej")
+    ]
     df = df.with_columns(
         pl.when(
             pl.fold(
@@ -266,11 +273,11 @@ def build_master_feature_table(data: dict[str, pl.DataFrame]) -> pl.DataFrame:
         home_hours_df.rename({"total_home_training_hours": "_home_h"})
         .join(
             other_hours_df.rename({"total_other_training_hours": "_other_h"}),
-            on=["introductory_id", "age"], how="outer_coalesce",
+            on=["introductory_id", "age"], how="full", coalesce=True,
         )
         .join(
             neurohab_df.rename({"total_hours": "_neuro_h"}),
-            on=["introductory_id", "age"], how="outer_coalesce",
+            on=["introductory_id", "age"], how="full", coalesce=True,
         )
         .fill_null(0)
         .with_columns(
