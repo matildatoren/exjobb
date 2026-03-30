@@ -478,8 +478,22 @@ def motorscore_impairments_future(
     )
 
 # kombinerat score 
-def motorscore_combined(imScore: float, moScore: float) -> float:
-    print("hej")
+def motorscore_combined(milestone_df: pl.DataFrame, impairment_df: pl.DataFrame,) -> pl.DataFrame:
+    return (
+        milestone_df.select(["introductory_id", "age", "milestone_score"])
+        .join(
+            impairment_df.select(["introductory_id", "age", "mms_normalized"]),
+            on=["introductory_id", "age"],
+            how="inner",
+        )
+        .with_columns(
+            ((pl.col("milestone_score") + pl.col("mms_normalized")) / 2)
+            .cast(pl.Float64)
+            .alias("combined_score")
+        )
+        .select(["introductory_id", "age", "milestone_score", "mms_normalized", "combined_score"])
+        .sort(["introductory_id", "age"])
+    )
 
 if __name__ == "__main__":
     from dataloader import load_data

@@ -167,7 +167,6 @@ def extract_training_details(training_struct, category_name):
         try:
             total_hours = (
                 float(hours or 0)
-                * float(days or 0)
                 * float(weeks or 0)
             )
 
