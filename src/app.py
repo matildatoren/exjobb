@@ -18,12 +18,26 @@ def load_data():
     ht = pd.read_sql("SELECT * FROM home_training", conn)
     it = pd.read_sql("SELECT * FROM intensive_therapies", conn)
     md = pd.read_sql("SELECT * FROM motorical_development", conn)
-    return users, intro, ht, it, md
 
-users, intro, ht, it, md = load_data()
+    ht_old = pd.read_sql("SELECT * FROM home_training_old", conn)
+    it_old = pd.read_sql("SELECT * FROM intensive_therapies_old", conn)
+    md_old = pd.read_sql("SELECT * FROM motorical_development_old", conn)
+
+    return users, intro, ht, it, md, ht_old, it_old, md_old
+
+
+users, intro, ht, it, md, ht_old, it_old, md_old = load_data()
 
 # Merge GMFCS into motor table
 md = md.merge(
+    intro[["id", "gmfcs_lvl"]],
+    left_on="introductory_id",
+    right_on="id",
+    how="left"
+)
+
+# Merge GMFCS into old motor table
+md_old = md_old.merge(
     intro[["id", "gmfcs_lvl"]],
     left_on="introductory_id",
     right_on="id",
@@ -69,6 +83,19 @@ ht_filtered = ht[
 
 it_filtered = it[
     it["introductory_id"].isin(valid_ids)
+]
+
+md_old_filtered = md_old[
+    (md_old["gmfcs_lvl"].isin(selected_gmfcs)) &
+    (md_old["introductory_id"].isin(valid_ids))
+]
+
+ht_old_filtered = ht_old[
+    ht_old["introductory_id"].isin(valid_ids)
+]
+
+it_old_filtered = it_old[
+    it_old["introductory_id"].isin(valid_ids)
 ]
 
 # ---------------------------
@@ -133,7 +160,7 @@ def intensive_completion_per_id_age(it_df: pd.DataFrame) -> pd.DataFrame:
     participate_col = "participate_therapies_neurohabilitation"
     centers_col = "neurohabilitation_centers"
     methods_col = "methods_applied_during_intense_training"
-    medical_col = "medical_treatments"  
+    medical_col = "medical_treatments"
 
     needed = [c for c in [participate_col, centers_col, methods_col, medical_col] if c in it_df.columns]
     tmp = it_df[["introductory_id", "age"] + needed].copy()
@@ -332,9 +359,9 @@ with tab1:
         )
 
     intro_latest = latest_created_at(intro, id_col="id")
-    ht_latest    = latest_created_at(ht)
-    it_latest    = latest_created_at(it)
-    md_latest    = latest_created_at(md)
+    ht_latest = latest_created_at(ht)
+    it_latest = latest_created_at(it)
+    md_latest = latest_created_at(md)
 
     all_latest = (
         pd.concat([intro_latest, ht_latest, it_latest, md_latest], ignore_index=True)
@@ -388,11 +415,20 @@ with tab2:
     st.subheader("Home Training")
     st.dataframe(ht_filtered)
 
+    st.subheader("Home Training Old")
+    st.dataframe(ht_old_filtered)
+
     st.subheader("Intensive Therapies")
     st.dataframe(it_filtered)
 
+    st.subheader("Intensive Therapies Old")
+    st.dataframe(it_old_filtered)
+
     st.subheader("Motor Development")
     st.dataframe(md_filtered)
+
+    st.subheader("Motor Development Old")
+    st.dataframe(md_old_filtered)
 
     st.subheader("Users")
     st.dataframe(users)
@@ -400,10 +436,10 @@ with tab2:
     st.subheader("User ID ↔ Introductory ID Mapping")
     users_map = users[["id", "email_cryp", "created_at"]].rename(columns={"id": "user_id"}).copy()
     intro_map = intro_filtered[["id", "user_id"]].rename(columns={"id": "introductory_id"}).copy()
- 
+
     users_map["user_id"] = users_map["user_id"].astype(str)
     intro_map["user_id"] = intro_map["user_id"].astype(str)
- 
+
     id_map = (
         users_map
         .merge(intro_map, on="user_id", how="left")
