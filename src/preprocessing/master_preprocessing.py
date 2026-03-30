@@ -73,6 +73,7 @@ def _build_device_binary(home_training_df: pl.DataFrame) -> pl.DataFrame:
 
         details = {}
         if isinstance(devices_raw, dict):
+
             device_names = devices_raw.get("devices", []) or []
             for device_name in device_names:
                 if device_name and device_name != "None":
