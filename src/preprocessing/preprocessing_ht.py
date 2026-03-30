@@ -14,29 +14,17 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 def extract_hometraining_hours(training):
     if training is None:
         return 0.0
-
-    training_dict = dict(training) if isinstance(training, dict) else {}
-    details = training_dict.get("details", {})
+    details = (training if isinstance(training, dict) else {}).get("details", {})
     total_hours = 0.0
-
-    for training_info in details.values():
-        if not training_info:
+    for info in details.values():
+        if not info:
             continue
-
-        hours = training_info.get("hours", 0)
-        days = training_info.get("days", 1)
-        weeks = training_info.get("weeks", 1)
-
         try:
-            hours = float(hours or 0)
-            days = float(days or 0)
-            weeks = float(weeks or 0)
-
-            total_hours += hours * days * weeks
-
+            hours = float(info.get("hours") or 0)
+            weeks = float(info.get("weeks") or 0)
+            total_hours += hours * weeks   # hours/week × weeks/year
         except (TypeError, ValueError):
             pass
-
     return total_hours
 
 def extract_device_hours(devices):

@@ -9,40 +9,16 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 def extract_neurohab_center_hours(struct):
     if struct is None:
         return []
-
-    struct_dict = dict(struct) if isinstance(struct, dict) else {}
-
     rows = []
-
-    for center_name, info in struct_dict.items():
-
-        if not info:
-            rows.append({
-                "center_name": center_name,
-                "total_hours": 0.0
-            })
-            continue
-
-        hours = info.get("hours", 0)
-        days = info.get("days", 1)
-        weeks = info.get("weeks", 1)
-
+    for center_name, info in (struct if isinstance(struct, dict) else {}).items():
         try:
-            total_hours = (
-                float(hours or 0)
-                * float(days or 0)
-                * float(weeks or 0)
-            )
+            hours = float((info or {}).get("hours") or 0)
+            weeks = float((info or {}).get("weeks") or 0)
+            total_hours = hours * weeks   # hours/week × weeks/year
         except (TypeError, ValueError):
             total_hours = 0.0
-
-        rows.append({
-            "center_name": center_name,
-            "total_hours": total_hours
-        })
-
+        rows.append({"center_name": center_name, "total_hours": total_hours})
     return rows
-
 
 # --- extract neurorehabilitation center hours for every child every year ----
 def process_neurohab_hours_per_user_per_age(df: pl.DataFrame) -> pl.DataFrame:
