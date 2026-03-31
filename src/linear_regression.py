@@ -42,23 +42,25 @@ IMAGES_DIR.mkdir(exist_ok=True)
 
 TARGET = "delta_milestone_score_setvalue"
 TRAINING_FEATURES = [
-    "total_home_training_hours",
-    "total_other_training_hours",
-    "neurohab_hours",
-    "med_Botulinum toxin (Botox) injections"
-]
-#BOTOX_KEYWORDS = ["botox", "botulinum", "botulin"]
-
-# ── helpers ──────────────────────────────────────────────────────────────────
-
-# def find_botox_column(df: pd.DataFrame) -> str | None:
-#     """Return the first med_* column whose name contains a botox keyword."""
-#     for col in df.columns:
-#         if col.startswith("med_"):
-#             lower = col.lower()
-#             if any(kw in lower for kw in BOTOX_KEYWORDS):
-#                 return col
-#     return None
+    #"gmfcs_int",
+    #"total_home_training_hours",
+    #"total_other_training_hours",
+    #"active_total_hours",
+    #"neurohab_hours",
+    "device_AFOs",
+    #"device_Kinesiotaping",
+    "device_Handsplint",
+    #"device_Standing frame",
+    #"device_Turtlebrace",
+    #"device_inga",
+    "has_any_device",
+    #"med_Botulinum toxin (Botox) injections",
+    #"med_No",
+    "med_Hand casting",
+    #"med_Orthopedic surgery (e.g., tendon lengthening, hip surgery)",
+    "med_Leg casting",
+    "has_any_medical_treatment"
+    ]
 
 
 def build_dataset(master: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series, str | None]:
@@ -66,11 +68,6 @@ def build_dataset(master: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series, str | 
     # botox_col = find_botox_column(master)
 
     feature_cols = TRAINING_FEATURES.copy()
-    # if botox_col:
-    #     feature_cols.append(botox_col)
-    #     print(f"  Botox column found: '{botox_col}'")
-    # else:
-    #     print("  ⚠  No botox column found — model will run without it.")
 
     # convert to pandas
     df = master.to_pandas()
@@ -80,6 +77,12 @@ def build_dataset(master: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series, str | 
 
     # fill remaining NaN in features with 0
     df[feature_cols] = df[feature_cols].fillna(0)
+
+    # Filters
+    # df = df[
+    #     (df[TARGET] != 0) &                          # remove zero outcome
+    #     (df[feature_cols].sum(axis=1) > 0)           # remove zero training
+    # ]
 
     X = df[feature_cols]
     y = df[TARGET]
@@ -236,16 +239,13 @@ def main():
     print(f"\n  Master table shape: {master.shape[0]} rows × {master.shape[1]} columns")
 
     print("\n  Selecting features and target …")
-    X, y = build_dataset(master) #, botox_col
+    X, y = build_dataset(master) 
 
     print(f"\n  Dataset ready: {len(X)} rows, {len(X.columns)} features")
     print(f"  Features : {list(X.columns)}")
     print(f"  Target   : {TARGET}")
     print(f"  Target range: [{y.min():.3f}, {y.max():.3f}]")
     print(f"  Target mean : {y.mean():.4f},  std: {y.std():.4f}")
-
-    if len(X) < 5:
-        print("\n  ⚠  Very few rows — results may not be reliable.")
 
     # ── models to compare ────────────────────────────────────────────────────
     models = {
