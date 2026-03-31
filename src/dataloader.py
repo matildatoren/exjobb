@@ -20,9 +20,10 @@ class SurveyDatabase:
         query = """
         SELECT 
             id,
-            gmfcs_lvl 
+            gmfcs_lvl
         FROM introductory
-        """
+        """        #Add age_max here when available
+
         return pl.read_database(query, self.conn)
     
     def load_home_training(self) -> pl.DataFrame:
