@@ -12,3 +12,4 @@ wheels/
 # Secret env
 .env
 images/*.png
+src/images/*.png
