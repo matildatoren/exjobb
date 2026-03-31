@@ -40,25 +40,35 @@ from src.preprocessing.master_preprocessing import build_master_feature_table
 IMAGES_DIR = Path(__file__).resolve().parent / "images"
 IMAGES_DIR.mkdir(exist_ok=True)
 
+#     3. milestone_score_setvalue
+#     4. milestone_score
+#     5. impairment_score_setvalue
+#     6. impairment_score
+#     7. delta_milestone_score_setvalue
+#     8. delta_milestone_score
+#     9. delta_impairment_score_setvalue
+#    10. delta_impairment_score
+
 TARGET = "delta_milestone_score_setvalue"
 TRAINING_FEATURES = [
-    #"gmfcs_int",
-    #"total_home_training_hours",
-    #"total_other_training_hours",
-    #"active_total_hours",
-    #"neurohab_hours",
-    "device_AFOs",
+    #"age",
+    "gmfcs_int",
+    "total_home_training_hours",
+    "total_other_training_hours",
+    "active_total_hours",
+    "neurohab_hours",
+    #"device_AFOs",
     #"device_Kinesiotaping",
-    "device_Handsplint",
+    #"device_Handsplint",
     #"device_Standing frame",
     #"device_Turtlebrace",
     #"device_inga",
     "has_any_device",
     #"med_Botulinum toxin (Botox) injections",
     #"med_No",
-    "med_Hand casting",
+    #"med_Hand casting",
     #"med_Orthopedic surgery (e.g., tendon lengthening, hip surgery)",
-    "med_Leg casting",
+    #"med_Leg casting",
     "has_any_medical_treatment"
     ]
 
