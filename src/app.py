@@ -103,6 +103,15 @@ it_old_filtered = it_old[
 # ---------------------------
 
 def _is_filled(x) -> bool:
+    """
+    Returnerar True om fältet anses ifyllt.
+
+    Ändringar:
+    - story, reflection räknas INTE här (de är exkluderade från col-listorna).
+    - devices: räknas som ifyllt om minst ett val gjorts i 'selected'.
+      Frekvensrutan ('details') är frivillig och krävs INTE för att fältet
+      ska anses ifyllt.
+    """
     if x is None:
         return False
     try:
@@ -115,15 +124,34 @@ def _is_filled(x) -> bool:
         return x.strip() != ""
 
     if isinstance(x, dict):
+        # Milestone-struktur (t.ex. gross_motor_development)
         if "milestones" in x:
             ms = x.get("milestones") or []
             return len(ms) > 0
 
-        if "details" in x or "selected" in x or "other" in x:
-            details = x.get("details") or {}
-            selected = x.get("selected") or []
+        # Val-struktur med selected/details/other (t.ex. devices, training_methods)
+        if "details" in x or "selected" in x or "other" in x or "devices" in x:
+            selected = x.get("selected") or x.get("devices") or []
             other = (x.get("other") or "").strip()
-            return (isinstance(details, dict) and len(details) > 0) or (len(selected) > 0) or (other != "")
+            details = x.get("details") or {}
+
+            if len(selected) > 0:
+                return True
+            if isinstance(details, dict) and len(details) > 0:
+                return True
+            if other != "":
+                return True
+            return False
+
+            # 'selected' räcker — 'details' (t.ex. frekvensruta för devices) är frivillig
+            if len(selected) > 0:
+                return True
+            # details utan selected kan fortfarande vara ifyllt (t.ex. fritext-fält)
+            if isinstance(details, dict) and len(details) > 0:
+                return True
+            if other != "":
+                return True
+            return False
 
         return len(x) > 0
 
@@ -152,15 +180,18 @@ def section_completion_per_id_age(df: pd.DataFrame, id_col: str, age_col: str, c
 
 def intensive_completion_per_id_age(it_df: pd.DataFrame) -> pd.DataFrame:
     """
-    Conditional logic:
-      - participate_therapies_neurohabilitation is ALWAYS expected (if column exists)
-      - medical_treatments is ALWAYS expected (if column exists)
-      - neurohabilitation_centers + methods_applied_during_intense_training count ONLY if participate == Yes
+    Villkorlig logik för IT-sektionen:
+      - participate_therapies_neurohabilitation räknas ALLTID (om kolumnen finns)
+      - medical_treatments räknas ALLTID (om kolumnen finns)
+      - neurohabilitation_centers + methods_applied_during_intense_training räknas
+        BARA om participate == Yes
+      - story är frivillig och räknas INTE
     """
     participate_col = "participate_therapies_neurohabilitation"
     centers_col = "neurohabilitation_centers"
     methods_col = "methods_applied_during_intense_training"
     medical_col = "medical_treatments"
+    # story exkluderas medvetet — frivilligt fält
 
     needed = [c for c in [participate_col, centers_col, methods_col, medical_col] if c in it_df.columns]
     tmp = it_df[["introductory_id", "age"] + needed].copy()
@@ -216,13 +247,27 @@ def intensive_completion_per_id_age(it_df: pd.DataFrame) -> pd.DataFrame:
 
 def compute_progress_percent(intro_df: pd.DataFrame, ht_df: pd.DataFrame, it_df: pd.DataFrame, md_df: pd.DataFrame) -> pd.DataFrame:
     """
-    Progress over the 3 sections (HT/IT/MD) across ages 1..max_age per child.
-    - Intro not included.
-    - Each section-year contributes fractionally based on how many relevant fields are filled.
-    - IT has conditional fields that only count if participate == Yes.
+    Progress över de 3 sektionerna (HT/IT/MD) per barn och år.
+
+    Frivilliga fält som INTE räknas:
+      - story      (HT, IT, MD)
+      - reflection (HT)
+      - devices-frekvens/details — devices räknas som ifyllt om selected är valt,
+        oavsett om frekvensrutan fyllts i (hanteras i _is_filled)
     """
-    ht_cols = ["training_methods_therapies", "devices", "other_training_methods_therapies"]
-    md_cols = ["gross_motor_development", "fine_motor_development", "motorical_impairments_lower", "motorical_impairments_upper"]
+    ht_cols = [
+        "training_methods_therapies",
+        "devices",
+        "other_training_methods_therapies",
+        # "story" och "reflection" exkluderas — frivilliga
+    ]
+    md_cols = [
+        "gross_motor_development",
+        "fine_motor_development",
+        "motorical_impairments_lower",
+        "motorical_impairments_upper",
+        # "story" exkluderas — frivillig
+    ]
 
     def max_age_by(df, id_col="introductory_id"):
         if df.empty or "age" not in df.columns or id_col not in df.columns:
@@ -236,7 +281,7 @@ def compute_progress_percent(intro_df: pd.DataFrame, ht_df: pd.DataFrame, it_df:
     max_age = pd.concat([max_ht, max_it, max_md], axis=1).max(axis=1)
     max_age = max_age.reindex(intro_df["id"]).fillna(0).astype(int)
 
-    # Build age grid per child: ages 1..max_age
+    # Bygg åldersrutnät per barn: åldrar 1..max_age
     grid_rows = []
     for child_id, m in zip(intro_df["id"].tolist(), max_age.tolist()):
         for age in range(1, m + 1):
@@ -266,7 +311,7 @@ def compute_progress_percent(intro_df: pd.DataFrame, ht_df: pd.DataFrame, it_df:
     merged["ht_total_fields"] = ht_total_fields
     merged["md_total_fields"] = md_total_fields
 
-    # If IT row missing for a given age, treat as 0 filled out of base_total (participate + medical), if those columns exist
+    # Om IT-rad saknas för en given ålder, behandla som 0 ifyllt av base_total
     it_base_total = 0
     if "participate_therapies_neurohabilitation" in it_df.columns:
         it_base_total += 1
@@ -341,13 +386,13 @@ with tab1:
     st.subheader("Participants (names)")
 
     cols_to_show = []
-    for c in ["nick_name", "gmfcs_lvl", "completed", "created_at", "id"]:
+    for c in ["nick_name", "country", "completed", "created_at", "id"]:
         if c in intro.columns:
             cols_to_show.append(c)
 
     progress = compute_progress_percent(intro, ht, it, md)
 
-    # --- Compute latest entry across all tables ---
+    # --- Beräkna senaste entry över alla tabeller ---
     def latest_created_at(df, id_col="introductory_id"):
         if "created_at" not in df.columns or id_col not in df.columns:
             return pd.DataFrame(columns=["id", "latest_entry"])
@@ -370,7 +415,6 @@ with tab1:
         .reset_index()
     )
     all_latest["latest_entry"] = pd.to_datetime(all_latest["latest_entry"]).dt.date
-    # --- End latest entry ---
 
     overview_people = intro[cols_to_show].merge(
         progress[["id", "progress_pct", "n_years"]],
@@ -450,7 +494,7 @@ with tab2:
     st.dataframe(id_map, use_container_width=True)
 
 # =====================================================
-# COMPLETENESS (existing simple view kept)
+# COMPLETENESS
 # =====================================================
 
 with tab3:
