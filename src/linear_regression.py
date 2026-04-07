@@ -52,24 +52,28 @@ IMAGES_DIR.mkdir(exist_ok=True)
 TARGET = "delta_milestone_score_setvalue"
 TRAINING_FEATURES = [
     #"age",
-    "gmfcs_int",
-    "total_home_training_hours",
-    "total_other_training_hours",
-    "active_total_hours",
-    "neurohab_hours",
+    #"gmfcs_int",
+    #"total_home_training_hours",
+    #"total_other_training_hours",
+    #"active_total_hours",
+    #"neurohab_hours",
     #"device_AFOs",
     #"device_Kinesiotaping",
     #"device_Handsplint",
     #"device_Standing frame",
     #"device_Turtlebrace",
     #"device_inga",
-    "has_any_device",
+    #"has_any_device",
     #"med_Botulinum toxin (Botox) injections",
     #"med_No",
     #"med_Hand casting",
     #"med_Orthopedic surgery (e.g., tendon lengthening, hip surgery)",
     #"med_Leg casting",
-    "has_any_medical_treatment"
+    #"has_any_medical_treatment",
+    #"log_total_home_training_hours",
+    #"log_total_other_training_hours",
+    "log_active_total_hours",
+    #"log_neurohab_hours",
     ]
 
 
