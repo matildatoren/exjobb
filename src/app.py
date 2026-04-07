@@ -364,16 +364,46 @@ with tab1:
     total_yesterday = (intro["_date"] <= yesterday).sum()
     delta_total = total - total_yesterday
 
-    completed = intro["completed"].sum() if "completed" in intro else 0
-    completed_yesterday = (
+    submitted = intro["completed"].sum() if "completed" in intro else 0
+    submitted_yesterday = (
         intro[intro["_date"] <= yesterday]["completed"].sum()
         if "completed" in intro.columns else 0
     )
-    delta_completed = completed - completed_yesterday
+    delta_submitted = submitted - submitted_yesterday
 
-    col1, col2 = st.columns(2)
+    # --- Compute progress early so we can use it for the "completed" metric ---
+    progress = compute_progress_percent(intro, ht, it, md)
+    intro_with_progress = intro.merge(progress[["id", "progress_pct"]], on="id", how="left")
+    intro_with_progress["progress_pct"] = intro_with_progress["progress_pct"].fillna(0)
+    intro_with_progress["_date"] = pd.to_datetime(intro_with_progress["created_at"]).dt.date
+
+    # Completed = submitted (completed flag) OR 100% progress score
+    fully_completed = int(
+        (
+            (intro_with_progress["completed"] == True) |
+            (intro_with_progress["progress_pct"] >= 100)
+        ).sum()
+    )
+    fully_completed_yesterday = int(
+        (
+            (intro_with_progress["_date"] <= yesterday) &
+            (
+                (intro_with_progress["completed"] == True) |
+                (intro_with_progress["progress_pct"] >= 100)
+            )
+        ).sum()
+    )
+    delta_fully_completed = fully_completed - fully_completed_yesterday
+
+    col1, col2, col3 = st.columns(3)
     col1.metric("Total participants", total, delta=int(delta_total))
-    col2.metric("Completed surveys", int(completed), delta=int(delta_completed))
+    col3.metric("Submitted surveys", int(submitted), delta=int(delta_submitted))
+    col2.metric(
+        "Completed surveys",
+        fully_completed,
+        delta=int(delta_fully_completed),
+        help="Surveys that are submitted or filled to 100%",
+    )
 
     st.subheader("Responses over time")
 
@@ -389,8 +419,6 @@ with tab1:
     for c in ["nick_name", "country", "completed", "created_at", "id"]:
         if c in intro.columns:
             cols_to_show.append(c)
-
-    progress = compute_progress_percent(intro, ht, it, md)
 
     # --- Beräkna senaste entry över alla tabeller ---
     def latest_created_at(df, id_col="introductory_id"):
@@ -436,7 +464,7 @@ with tab1:
     rename_map = {
         "nick_name": "Name",
         "gmfcs_lvl": "GMFCS",
-        "completed": "Completed",
+        "completed": "Submitted",
         "created_at": "Created",
         "id": "Intro ID",
         "progress_pct": "Progress (%)",
