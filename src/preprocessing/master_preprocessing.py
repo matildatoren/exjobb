@@ -303,6 +303,13 @@ def build_master_feature_table(data: dict[str, pl.DataFrame]) -> pl.DataFrame:
         .join(device_binary_df, on=["introductory_id", "age"], how="left")
         .join(medical_df,       on=["introductory_id", "age"], how="left")
         .fill_null(0)
+        # ── log1p-transformerade timmar ──────────────────────────────────────
+        .with_columns([
+            (pl.col("total_home_training_hours") + 1).log(base=2.718281828).alias("log_total_home_training_hours"),
+            (pl.col("total_other_training_hours") + 1).log(base=2.718281828).alias("log_total_other_training_hours"),
+            (pl.col("active_total_hours") + 1).log(base=2.718281828).alias("log_active_total_hours"),
+            (pl.col("neurohab_hours") + 1).log(base=2.718281828).alias("log_neurohab_hours"),
+        ])
         .sort(["introductory_id", "age"])
     )
  
@@ -333,6 +340,10 @@ def get_feature_groups(master_df: pl.DataFrame) -> dict[str, list[str]]:
             "total_other_training_hours",
             "neurohab_hours",
             "active_total_hours",
+            "log_total_home_training_hours",
+            "log_total_other_training_hours",
+            "log_active_total_hours",
+            "log_neurohab_hours",
         ] if c in cols],
         "devices": [c for c in master_df.columns
                     if c.startswith("device_") or c == "has_any_device"],
