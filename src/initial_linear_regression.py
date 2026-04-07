@@ -9,148 +9,112 @@ from sklearn.preprocessing import PolynomialFeatures
 from sklearn.pipeline import make_pipeline
 from sklearn.metrics import r2_score
 
-from preprocessing.preprocessing_it import (
-    process_neurohab_hours_per_user_per_age,
-    process_medical_treatments_per_user_per_age,
-)
-
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR   = Path(__file__).resolve().parent.parent
 IMAGES_DIR = BASE_DIR / "images"
 
 
-# -------------------------------------------------------
-# Build dose-response dataset
-# -------------------------------------------------------
+# ════════════════════════════════════════════════════════════════════════════
+# CONFIG — ändra här
+# ════════════════════════════════════════════════════════════════════════════
+
+CONFIG = {
+    # "filter_ids": [
+    #     "771d12c3-bc1a-4a97-ad27-00d35b24f87e",
+    #     "1d0afd8d-6945-488a-964c-724e95db6696",
+    #     "1019fb0a-480d-4bef-b8f9-493b9dfe253b",
+    #     "6e7aeec2-2846-433d-a4ac-0e753da08530",
+    #     "e30d335e-3a7a-484d-951d-f8e3f17ccfb3",
+    #     "578adb11-a12f-4121-a567-afe67c25640b",
+    #     "0a584ba1-cdf4-4251-9168-5f8ccc0240e3",
+    #     "7e42b31a-c597-4418-9bf6-a8c3286d049f",
+    #     "f9231c8d-2ade-4c0e-a878-a9524ccc3d65",
+    #     "df67e7ea-0b50-408b-9342-4c29d0efa839",
+    #     "16f3f961-07a2-4099-8498-1bad9c2faa19",
+    #     "44cd783c-b33d-4553-89cd-2a73b59e1982",
+    #     "cd26a009-6e51-4372-b151-b7d2bb8b7183",
+    #     "c0990a55-916e-47ba-b29a-aee83d9f33c9",
+    #     "89e4bf27-9a6f-45e8-a415-ef53f23f7931",
+    #     "65ab3206-7371-4471-845c-6d238050494f",
+    # ],
+
+    # Output — vilket/vilka motorscores att analysera
+    "scores": {
+        "milestones": {
+            "delta_col": "delta_milestone_score_setvalue",
+            "title":     "Milestone Score",
+        },
+        "impairments": {
+            "delta_col": "delta_impairment_score_setvalue",
+            "title":     "Impairment Score",
+        },
+        "combined": {
+            "delta_col": "delta_combined_score_setvalue",
+            "title":     "Combined Score",
+        },
+        
+    },
+
+    # Input — träningskomponenter att inkludera i komponentanalysen
+    "hour_components": [
+        ("log_total_home_training_hours",  "Home training"),
+        ("log_total_other_training_hours", "Sports / other"),
+        ("log_neurohab_hours",             "Intensive therapy"),
+        ("log_active_total_hours",         "Combined active total"),
+    ],
+
+    # Input — kolumn som används i overall dose-response-plotten
+    # Bör vara en av kolumnerna ovan
+    "overall_feature": "log_active_total_hours",
+}
+
+# ════════════════════════════════════════════════════════════════════════════
+# Dataset builder — uses master feature table directly
+# ════════════════════════════════════════════════════════════════════════════
 
 
-def build_dose_response_dataset(
-    motor_df: pl.DataFrame,
-    home_df: pl.DataFrame,
-    score_col: str = "milestone_score",
+def _get_treatment_cols(master_df: pd.DataFrame) -> list[str]:
+    """Return med_* columns that represent real treatments (exclude negations)."""
+    exclude = {"med_no", "med_none", "med_nej", "has_any_medical_treatment"}
+    return [
+        c for c in master_df.columns
+        if c.startswith("med_") and c.lower() not in exclude
+    ]
+
+
+def build_analysis_df(
+    master: pl.DataFrame,
+    delta_col: str,
 ) -> pd.DataFrame:
     """
-    Join delta score with total training hours per child per year.
+    Extract the relevant columns from master for one analysis.
 
-    Args:
-        motor_df:   Motor score DataFrame with score_col per child and age.
-        home_df:    Home training data with therapy hours per child, age, category.
-        score_col:  Name of the score column to compute delta from.
-
-    Returns:
-        pd.DataFrame with delta_score, total_training_hours(_hr), and
-        one column per training category.
+    Returns a pandas DataFrame with:
+      delta_score, hour components, active_total_hours, med_* columns.
     """
-    motor_df = motor_df.sort(["introductory_id", "age"])
-    motor_df = motor_df.with_columns(
-        (pl.col(score_col) - pl.col(score_col).shift(1))
-        .over("introductory_id")
-        .alias("delta_score")
-    ).filter(pl.col("delta_score").is_not_null())
-
-    total_hours = home_df.group_by(["introductory_id", "age"]).agg(
-        pl.sum("total_hours").alias("total_training_hours")
+    keep = (
+        ["introductory_id", "age", delta_col]
+        + [col for col, _ in CONFIG["hour_components"] if col in master.columns]
+        + [c for c in master.columns if c.startswith("med_")]
     )
-
-    category_hours = (
-        home_df.group_by(["introductory_id", "age", "training_category"])
-        .agg(pl.sum("total_hours").alias("hours"))
-        .pivot(values="hours", index=["introductory_id", "age"], on="training_category")
-        .fill_null(0)
-    )
+    keep = [c for c in keep if c in master.columns]   # guard against missing cols
 
     df = (
-        motor_df.join(total_hours, on=["introductory_id", "age"], how="left")
-        .join(category_hours, on=["introductory_id", "age"], how="left")
-        .fill_null(0)
+        master
+        .select(keep)
+        .filter(pl.col(delta_col).is_not_null())
+        # .pipe(lambda df: (
+        # df.filter(pl.col("introductory_id").is_in(CONFIG["filter_ids"])) #FILTRERAR BARA DE SOM ÄR FÄRDIGA OCH SKRIVS UPPE I CONFIG!!
+        #     if CONFIG["filter_ids"] else df
+        # ))
+        .to_pandas()
+        .rename(columns={delta_col: "delta_score"})
     )
-
-    df = df.with_columns(
-        (pl.col("total_training_hours") / 60).alias("total_training_hours_hr")
-    )
-
-    return df.to_pandas()
+    return df
 
 
-# -------------------------------------------------------
-# Build combined active hours dataset (no devices)
-# -------------------------------------------------------
-
-
-def build_active_hours_dataset(
-    motor_df: pl.DataFrame,
-    home_df: pl.DataFrame,
-    neurohab_df: pl.DataFrame,
-    medical_df: pl.DataFrame,
-    score_col: str = "milestone_score",
-) -> pd.DataFrame:
-    """
-    Combine home training, sports/other, and intensive therapy hours.
-    Devices are excluded. Binary indicators for medical treatments included.
-
-    Args:
-        motor_df:   Motor score DataFrame with score_col per child and age.
-        home_df:    Home training data.
-        neurohab_df: Intensive therapy hours per child and age.
-        medical_df: Binary medical treatment indicators per child and age.
-        score_col:  Name of the score column to compute delta from.
-
-    Returns:
-        pd.DataFrame with delta_score, component hours, active_total,
-        and medical treatment columns.
-    """
-    motor_df = motor_df.sort(["introductory_id", "age"])
-    motor_df = motor_df.with_columns(
-        (pl.col(score_col) - pl.col(score_col).shift(1))
-        .over("introductory_id")
-        .alias("delta_score")
-    ).filter(pl.col("delta_score").is_not_null())
-
-    home_hours = (
-        home_df.filter(pl.col("training_category") == "home")
-        .group_by(["introductory_id", "age"])
-        .agg(pl.sum("total_hours").alias("home_hours"))
-    )
-
-    sports_hours = (
-        home_df.filter(pl.col("training_category") == "other")
-        .group_by(["introductory_id", "age"])
-        .agg(pl.sum("total_hours").alias("sports_hours"))
-    )
-
-    neurohab_hours = neurohab_df.group_by(["introductory_id", "age"]).agg(
-        pl.sum("total_hours").alias("neurohab_hours")
-    )
-
-    df = (
-        motor_df.join(home_hours, on=["introductory_id", "age"], how="left")
-        .join(sports_hours, on=["introductory_id", "age"], how="left")
-        .join(neurohab_hours, on=["introductory_id", "age"], how="left")
-        .join(medical_df, on=["introductory_id", "age"], how="left")
-        .fill_null(0)
-    )
-
-    df = df.with_columns(
-        (
-            pl.col("home_hours") + pl.col("sports_hours") + pl.col("neurohab_hours")
-        ).alias("active_total")
-    )
-
-    df = df.with_columns(
-        [
-            (pl.col("home_hours") / 60).alias("home_hours"),
-            (pl.col("sports_hours") / 60).alias("sports_hours"),
-            (pl.col("neurohab_hours") / 60).alias("neurohab_hours"),
-            (pl.col("active_total") / 60).alias("active_total"),
-        ]
-    )
-
-    return df.to_pandas()
-
-
-# -------------------------------------------------------
-# Regression helpers
-# -------------------------------------------------------
-
+# ════════════════════════════════════════════════════════════════════════════
+# Regression helpers  (unchanged from original)
+# ════════════════════════════════════════════════════════════════════════════
 
 def _fit_linear(X: pd.DataFrame, y: pd.Series):
     model = LinearRegression()
@@ -159,16 +123,14 @@ def _fit_linear(X: pd.DataFrame, y: pd.Series):
     return model, r2
 
 
-def fit_linear_dose_response(
-    df: pd.DataFrame, feature: str = "total_training_hours_hr"
-):
+def fit_linear_dose_response(df: pd.DataFrame, feature: str = "active_total_hours"):
     subset = df[["delta_score", feature]].dropna()
     X, y = subset[[feature]], subset["delta_score"]
     return _fit_linear(X, y)
 
 
 def fit_polynomial_dose_response(
-    df: pd.DataFrame, feature: str = "total_training_hours_hr", degree: int = 2
+    df: pd.DataFrame, feature: str = "active_total_hours", degree: int = 2
 ):
     subset = df[["delta_score", feature]].dropna()
     X, y = subset[[feature]], subset["delta_score"]
@@ -180,95 +142,69 @@ def fit_polynomial_dose_response(
     return model, r2
 
 
-# -------------------------------------------------------
+# ════════════════════════════════════════════════════════════════════════════
 # Run analysis
-# -------------------------------------------------------
+# ════════════════════════════════════════════════════════════════════════════
 
-
-def run_analysis(
-    motor_df: pl.DataFrame,
-    home_df: pl.DataFrame,
-    neurohab_df: pl.DataFrame,
-    medical_df: pl.DataFrame,
-    score_col: str = "milestone_score",
-) -> dict:
+def run_analysis(master: pl.DataFrame, delta_col: str) -> dict:
     """
-    Run all dose-response regressions for a given score column.
+    Run all dose-response regressions using the master feature table.
 
     Args:
-        motor_df:   Motor score DataFrame containing score_col.
-        home_df:    Home training data.
-        neurohab_df: Intensive therapy hours.
-        medical_df: Binary medical treatment indicators.
-        score_col:  Which score column to analyse ("milestone_score",
-                    "mms_normalized", or "combined_score").
+        master:     Master feature table from build_master_feature_table().
+        delta_col:  Which delta column to use as the target, e.g.
+                    'delta_milestone_score_setvalue'.
 
     Returns:
-        dict with active_df, dose_df, component_results, treatment_results,
+        dict with active_df, component_results, treatment_results,
         linear/poly model and R² values.
     """
-    active_df = build_active_hours_dataset(
-        motor_df, home_df, neurohab_df, medical_df, score_col=score_col
-    )
-    dose_df = build_dose_response_dataset(motor_df, home_df, score_col=score_col)
+    active_df = build_analysis_df(master, delta_col)
+    treatment_cols = _get_treatment_cols(active_df)
 
-    known_cols = {
-        "introductory_id", "age", score_col,
-        "delta_score", "home_hours", "sports_hours",
-        "neurohab_hours", "active_total", "cum_unique_milestones",
-        "milestone_score", "mms_normalized", "combined_score",
-    }
-    treatment_cols = [c for c in active_df.columns if c not in known_cols]
-
-    components = {
-        "home_hours":     "Home training",
-        "sports_hours":   "Sports / other",
-        "neurohab_hours": "Intensive therapy",
-        "active_total":   "Combined active total",
-    }
-
+    # ── Component regressions ────────────────────────────────────────────────
     component_results = []
-    for col, label in components.items():
+    for col, label in CONFIG["hour_components"]:
+        if col not in active_df.columns:
+            continue
         subset = active_df[["delta_score", col]].dropna()
         subset = subset[subset[col] >= 0]
         if len(subset) < 5 or subset[col].sum() == 0:
             continue
         model, r2 = _fit_linear(subset[[col]], subset["delta_score"])
-        component_results.append(
-            {
-                "col":        col,
-                "label":      label,
-                "coeff":      model.coef_[0],
-                "intercept":  model.intercept_,
-                "r2":         r2,
-                "n":          len(subset),
-                "mean_hours": round(subset[col].mean(), 1),
-            }
-        )
+        component_results.append({
+            "col":        col,
+            "label":      label,
+            "coeff":      model.coef_[0],
+            "intercept":  model.intercept_,
+            "r2":         r2,
+            "n":          len(subset),
+            "mean_hours": round(subset[col].mean(), 1),
+        })
 
+    # ── Treatment comparisons ────────────────────────────────────────────────
     treatment_results = []
     for col in treatment_cols:
         received     = active_df[active_df[col] == 1]["delta_score"].dropna()
         not_received = active_df[active_df[col] == 0]["delta_score"].dropna()
         if len(received) == 0:
             continue
-        treatment_results.append(
-            {
-                "col":        col,
-                "n_received": len(received),
-                "n_not":      len(not_received),
-                "mean_yes":   round(received.mean(), 3),
-                "mean_no":    round(not_received.mean(), 3),
-                "mean_diff":  round(received.mean() - not_received.mean(), 3),
-            }
-        )
+        treatment_results.append({
+            "col":        col,
+            "n_received": len(received),
+            "n_not":      len(not_received),
+            "mean_yes":   round(received.mean(), 3),
+            "mean_no":    round(not_received.mean(), 3),
+            "mean_diff":  round(received.mean() - not_received.mean(), 3),
+        })
 
-    linear_model, linear_r2 = fit_linear_dose_response(dose_df)
-    poly_model,   poly_r2   = fit_polynomial_dose_response(dose_df)
+    # ── Overall dose-response ────────────────────────────────────────────────
+    feature = CONFIG["overall_feature"]
+    linear_model, linear_r2 = fit_linear_dose_response(active_df, feature)
+    poly_model,   poly_r2   = fit_polynomial_dose_response(active_df, feature)
 
     return {
         "active_df":         active_df,
-        "dose_df":           dose_df,
         "component_results": component_results,
         "treatment_results": treatment_results,
         "treatment_cols":    treatment_cols,
@@ -276,14 +212,13 @@ def run_analysis(
         "linear_r2":         linear_r2,
         "poly_model":        poly_model,
         "poly_r2":           poly_r2,
-        "score_col":         score_col,
+        "overall_feature":   feature,
     }
 
 
-# -------------------------------------------------------
+# ════════════════════════════════════════════════════════════════════════════
 # Print summary
-# -------------------------------------------------------
-
+# ════════════════════════════════════════════════════════════════════════════
 
 def print_summary(results: dict, title: str = "Motor Score"):
     sep  = "=" * 62
@@ -294,8 +229,7 @@ def print_summary(results: dict, title: str = "Motor Score"):
     print(sep)
 
     print("\n  Active Hours Components (devices excluded)\n")
-    header = f"  {'Component':<26} {'Coeff':>8} {'R²':>7} {'N':>6} {'Mean hrs':>10}"
-    print(header)
+    print(f"  {'Component':<26} {'Coeff':>8} {'R²':>7} {'N':>6} {'Mean hrs':>10}")
     print(f"  {line}")
     for r in results["component_results"]:
         print(
@@ -307,15 +241,14 @@ def print_summary(results: dict, title: str = "Motor Score"):
         )
 
     print(f"\n  {line}")
-    print("  Overall Dose-Response (all home training incl. devices)\n")
+    print(f"  Overall Dose-Response ({results['overall_feature']})\n")
     print(f"    Linear model   R² = {results['linear_r2']:.4f}")
     print(f"    Poly model     R² = {results['poly_r2']:.4f}")
 
     if results["treatment_results"]:
         print(f"\n  {line}")
         print("  Medical Treatments\n")
-        header2 = f"  {'Treatment':<28} {'Yes (n)':>8} {'No (n)':>8} {'Diff':>8}"
-        print(header2)
+        print(f"  {'Treatment':<28} {'Yes (n)':>8} {'No (n)':>8} {'Diff':>8}")
         print(f"  {line}")
         for t in results["treatment_results"]:
             print(
@@ -326,10 +259,9 @@ def print_summary(results: dict, title: str = "Motor Score"):
     print(f"\n{sep}\n")
 
 
-# -------------------------------------------------------
-# Figure 1 — 2×2 training component scatter plots
-# -------------------------------------------------------
-
+# ════════════════════════════════════════════════════════════════════════════
+# Figures  (logic unchanged, column names updated)
+# ════════════════════════════════════════════════════════════════════════════
 
 def plot_training_components(
     results: dict,
@@ -355,7 +287,7 @@ def plot_training_components(
             model, _ = _fit_linear(subset[[col]], subset["delta_score"])
             x_range    = np.linspace(subset[col].min(), subset[col].max(), 100)
             x_range_df = pd.DataFrame(x_range, columns=[col])
-            ax.plot(x_range, model.predict(x_range_df), color="orange", linewidth=2, label="Linear fit")
+            ax.plot(x_range, model.predict(x_range_df), color="orange", linewidth=2)
 
         ax.axhline(0, color="gray", linewidth=0.8, linestyle=":")
         ax.set_xlabel("Training dose (hours / year)")
@@ -371,15 +303,10 @@ def plot_training_components(
     for j in range(len(panels), 4):
         axes[j].set_visible(False)
 
-    plt.suptitle(f"Dose-Response by Training Component — {title} (devices excluded)", fontsize=13)
+    plt.suptitle(f"Dose-Response by Training Component — {title}", fontsize=13)
     plt.tight_layout()
     plt.savefig(IMAGES_DIR / filename, dpi=150)
     print(f"Saved: {filename}")
-
-
-# -------------------------------------------------------
-# Figure 2 — Treatment box plots
-# -------------------------------------------------------
 
 
 def plot_treatment_effects(
@@ -409,7 +336,7 @@ def plot_treatment_effects(
 
         ax.set_xticks([1, 2])
         ax.set_xticklabels([f"No\n(n={len(not_received)})", f"Yes\n(n={len(received)})"])
-        ax.set_title(col.replace("_", " ").title())
+        ax.set_title(col.replace("med_", "").replace("_", " ").title())
         ax.set_xlabel("Received treatment")
         ax.axhline(0, color="gray", linewidth=0.8, linestyle=":")
 
@@ -428,22 +355,17 @@ def plot_treatment_effects(
     print(f"Saved: {filename}")
 
 
-# -------------------------------------------------------
-# Figure 3 — Overall dose-response (linear + poly overlay)
-# -------------------------------------------------------
-
-
 def plot_overall_dose_response(
     results: dict,
     title: str = "Motor Score",
     filename: str = "overall_dose_response.png",
 ):
-    dose_df      = results["dose_df"]
-    feature      = "total_training_hours_hr"
+    active_df    = results["active_df"]
+    feature      = results["overall_feature"]
     linear_model = results["linear_model"]
     poly_model   = results["poly_model"]
 
-    subset = dose_df[["delta_score", feature]].dropna()
+    subset = active_df[["delta_score", feature]].dropna()
     X, y   = subset[[feature]], subset["delta_score"]
 
     x_range    = np.linspace(X[feature].min(), X[feature].max(), 200).reshape(-1, 1)
@@ -463,94 +385,48 @@ def plot_overall_dose_response(
     )
 
     ax.axhline(0, color="gray", linewidth=0.8, linestyle=":")
-    ax.set_xlabel("Total training hours / year")
+    ax.set_xlabel("Total active hours / year")
     ax.set_ylabel(f"Δ {title}")
-    ax.set_title(f"Overall Dose-Response: Training Hours vs {title} Change")
+    ax.set_title(f"Overall Dose-Response: Active Hours vs {title} Change")
     ax.legend()
     plt.tight_layout()
     plt.savefig(IMAGES_DIR / filename, dpi=150)
     print(f"Saved: {filename}")
 
 
-# -------------------------------------------------------
-# Main — kör tre separata analyser
-# -------------------------------------------------------
+# ════════════════════════════════════════════════════════════════════════════
+# Main
+# ════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
     from dataloader import load_data
     from connect_db import get_connection
-    from preprocessing.motor_scores import (
-        motorscore_milestones_setvalue,
-        motorscore_impairments_setvalue,
-        motorscore_combined,
-    )
-    from preprocessing.preprocessing_ht import process_training_per_type_per_year
-    from preprocessing.preprocessing_it import (
-        process_neurohab_hours_per_user_per_age,
-        process_medical_treatments_per_user_per_age,
-    )
+    from preprocessing.master_preprocessing import build_master_feature_table
 
     conn = get_connection()
     data = load_data(conn)
 
-    # --- Bygg scores ---
-    milestone_df  = motorscore_milestones_setvalue(data["motorical_development"])
-    impairment_df = motorscore_impairments_setvalue(data["motorical_development"])
-    combined_df   = motorscore_combined(milestone_df, impairment_df)
+    master = build_master_feature_table(data)
 
-    # --- Bygg träningsdata ---
-    home_df     = process_training_per_type_per_year(data["home_training"])
-    neurohab_df = process_neurohab_hours_per_user_per_age(data["intensive_therapies"])
-    medical_df  = process_medical_treatments_per_user_per_age(data["intensive_therapies"])
+    for key, cfg in CONFIG["scores"].items():
+        results = run_analysis(master, delta_col=cfg["delta_col"])
 
-    # --- Definiera de tre analyserna ---
-    analyses = [
-        {
-            "motor_df":  milestone_df,
-            "score_col": "milestone_score",
-            "title":     "Milestone Score",
-            "key":       "milestones",
-        },
-        {
-            "motor_df":  impairment_df,
-            "score_col": "mms_normalized",
-            "title":     "Impairment Score",
-            "key":       "impairments",
-        },
-        {
-            "motor_df":  combined_df,
-            "score_col": "combined_score",
-            "title":     "Combined Score",
-            "key":       "combined",
-        },
-    ]
-
-    # --- Kör och plotta varje analys ---
-    for a in analyses:
-        results = run_analysis(
-            motor_df    = a["motor_df"],
-            home_df     = home_df,
-            neurohab_df = neurohab_df,
-            medical_df  = medical_df,
-            score_col   = a["score_col"],
-        )
-
-        print_summary(results, title=a["title"])
+        print_summary(results, title=cfg["title"])
 
         plot_training_components(
             results,
-            title    = a["title"],
-            filename = f"training_components_{a['key']}.png",
+            title    = cfg["title"],
+            filename = f"training_components_{key}.png",
         )
         plot_overall_dose_response(
             results,
-            title    = a["title"],
-            filename = f"overall_dose_response_{a['key']}.png",
+            title    = cfg["title"],
+            filename = f"overall_dose_response_{key}.png",
         )
         plot_treatment_effects(
             results,
-            title    = a["title"],
-            filename = f"treatment_effects_{a['key']}.png",
+            title    = cfg["title"],
+            filename = f"treatment_effects_{key}.png",
         )
 
     plt.show()

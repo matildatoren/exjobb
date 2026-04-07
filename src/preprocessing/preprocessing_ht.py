@@ -48,7 +48,7 @@ def extract_device_hours(devices):
             days = float(days or 0)
             weeks = float(weeks or 0)
 
-            total_hours += hours * days * weeks
+            total_hours += hours * weeks
 
         except (TypeError, ValueError):
             pass
@@ -76,7 +76,7 @@ def extract_other_training_hours(other_training):
             days = float(days or 0)
             weeks = float(weeks or 0)
 
-            total_hours += hours * days * weeks
+            total_hours += hours * weeks
 
         except (TypeError, ValueError):
             pass

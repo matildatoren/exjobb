@@ -23,6 +23,7 @@ from preprocessing.motor_scores import (
     motorscore_impairments_setvalue,
     motorscore_milestones,
     motorscore_impairments,
+    motorscore_combined,
 )
 
 
@@ -217,6 +218,23 @@ def _build_motor_table(motorical_dev: pl.DataFrame) -> pl.DataFrame:
         .join(imp_norm, on=["introductory_id", "age"], how="left")
         .sort(["introductory_id", "age"])
     )
+
+    # ── combined score via motorscore_combined ───────────────────────────────
+    combined_set = motorscore_combined(ms_set.rename({"milestone_score_setvalue": "milestone_score"}),
+                                    imp_set.rename({"impairment_score_setvalue": "mms_normalized"}))
+    combined_norm = motorscore_combined(
+        ms_norm,
+        imp_norm.rename({"impairment_score": "mms_normalized"}),
+    )
+
+    motor = (
+        motor
+        .join(combined_set.select(["introductory_id", "age",
+                                pl.col("combined_score").alias("combined_score_setvalue")]),
+            on=["introductory_id", "age"], how="left")
+        .join(combined_norm.select(["introductory_id", "age", "combined_score"]),
+            on=["introductory_id", "age"], how="left")
+    )
  
     # ── delta for every motor score ─────────────────────────────────────────
     score_cols = [
@@ -224,6 +242,8 @@ def _build_motor_table(motorical_dev: pl.DataFrame) -> pl.DataFrame:
         "milestone_score",
         "impairment_score_setvalue",
         "impairment_score",
+        "combined_score_setvalue",
+        "combined_score",
     ]
 
     motor = motor.with_columns([
@@ -362,6 +382,8 @@ def get_feature_groups(master_df: pl.DataFrame) -> dict[str, list[str]]:
             "delta_milestone_score",
             "delta_impairment_score_setvalue",
             "delta_impairment_score",
+            "combined_score_setvalue",
+            "combined_score",
         ] if c in cols],
     }
  
