@@ -20,7 +20,8 @@ class SurveyDatabase:
         query = """
         SELECT 
             id,
-            gmfcs_lvl 
+            gmfcs_lvl,
+            story 
         FROM introductory
         """
         return pl.read_database(query, self.conn)
@@ -39,7 +40,8 @@ class SurveyDatabase:
             introductory_id,
             training_methods_therapies,
             devices,
-            other_training_methods_therapies
+            other_training_methods_therapies,
+            story
         FROM home_training
         """
         return pl.read_database(query, self.conn)
@@ -59,7 +61,8 @@ class SurveyDatabase:
             participate_therapies_neurohabilitation,
             neurohabilitation_centers,
             methods_applied_during_intense_training,
-            medical_treatments
+            medical_treatments,
+            story
         FROM intensive_therapies
         """
         return pl.read_database(query, self.conn)
@@ -79,7 +82,8 @@ class SurveyDatabase:
             gross_motor_development,
             fine_motor_development,
             motorical_impairments_lower,
-            motorical_impairments_upper
+            motorical_impairments_upper,
+            story
         FROM motorical_development
         """
         return pl.read_database(query, self.conn)
