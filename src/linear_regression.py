@@ -72,8 +72,20 @@ TRAINING_FEATURES = [
     #"has_any_medical_treatment",
     #"log_total_home_training_hours",
     #"log_total_other_training_hours",
-    "log_active_total_hours",
+    #"log_active_total_hours",
     #"log_neurohab_hours",
+    # "cat_neurodevelopmental_reflex",
+    # "cat_motor_learning_task",
+    # "cat_technology_assisted",
+    # "cat_suit_based",
+    # "cat_physical_conditioning",
+    # "cat_complementary",
+    "log_cat_neurodevelopmental_reflex",
+    "log_cat_motor_learning_task",
+    "log_cat_technology_assisted",
+    "log_cat_suit_based",
+    "log_cat_physical_conditioning",
+    "log_cat_complementary",
     ]
 
 
