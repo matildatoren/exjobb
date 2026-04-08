@@ -26,6 +26,11 @@ from preprocessing.motor_scores import (
     motorscore_combined,
 )
 
+from preprocessing.preprocessing_categories import (
+    build_category_hours_table,
+    CATEGORY_COLS,
+)
+
 
 # ════════════════════════════════════════════════════════════════════════════
 # GMFCS helpers
@@ -286,7 +291,14 @@ def build_master_feature_table(data: dict[str, pl.DataFrame]) -> pl.DataFrame:
     medical_df = process_medical_treatments_per_user_per_age(intensive_therapies)
     medical_df = _prefix_medical_cols(medical_df)
 
-    # ── 5. active_total_hours (home + other + neurohab) ─────────────────────
+
+    # ── 5. Therapy category hours ───────────────────────────────────────────
+    category_hours_df = build_category_hours_table(
+        home_training,
+        intensive_therapies,
+    )
+
+    # ── 6. active_total_hours (home + other + neurohab) ─────────────────────
     active_df = (
         home_hours_df.rename({"total_home_training_hours": "_home_h"})
         .join(
@@ -306,10 +318,10 @@ def build_master_feature_table(data: dict[str, pl.DataFrame]) -> pl.DataFrame:
     )
  
 
-    # ── 6. All motor scores + delta / lag ────────────────────────────────────
+    # ── 7. All motor scores + delta / lag ────────────────────────────────────
     motor_df = _build_motor_table(motorical_dev)
 
-    # ── 7. Join everything ───────────────────────────────────────────────────
+    # ── 8. Join everything ───────────────────────────────────────────────────
     result = (
         motor_df
         .join(gmfcs_df,       on="introductory_id",           how="left")
@@ -322,6 +334,7 @@ def build_master_feature_table(data: dict[str, pl.DataFrame]) -> pl.DataFrame:
         )
         .join(device_binary_df, on=["introductory_id", "age"], how="left")
         .join(medical_df,       on=["introductory_id", "age"], how="left")
+        .join(category_hours_df, on=["introductory_id", "age"], how="left")
         .fill_null(0)
         # ── log1p-transformerade timmar ──────────────────────────────────────
         .with_columns([
@@ -329,6 +342,18 @@ def build_master_feature_table(data: dict[str, pl.DataFrame]) -> pl.DataFrame:
             (pl.col("total_other_training_hours") + 1).log(base=2.718281828).alias("log_total_other_training_hours"),
             (pl.col("active_total_hours") + 1).log(base=2.718281828).alias("log_active_total_hours"),
             (pl.col("neurohab_hours") + 1).log(base=2.718281828).alias("log_neurohab_hours"),
+        ])
+        .with_columns([
+            (pl.col("total_home_training_hours") + 1).log(base=2.718281828).alias("log_total_home_training_hours"),
+            (pl.col("total_other_training_hours") + 1).log(base=2.718281828).alias("log_total_other_training_hours"),
+            (pl.col("active_total_hours") + 1).log(base=2.718281828).alias("log_active_total_hours"),
+            (pl.col("neurohab_hours") + 1).log(base=2.718281828).alias("log_neurohab_hours"),
+            # ── log1p för terapikategorier ──────────────────────────────────────
+            *[
+                (pl.col(c) + 1).log(base=2.718281828).alias(f"log_{c}")
+                for c in CATEGORY_COLS
+                if c != "cat_unclassified"   # unclassified är inte meningsfull som feature
+            ],
         ])
         .sort(["introductory_id", "age"])
     )
@@ -385,6 +410,9 @@ def get_feature_groups(master_df: pl.DataFrame) -> dict[str, list[str]]:
             "combined_score_setvalue",
             "combined_score",
         ] if c in cols],
+        "therapy_categories": [c for c in CATEGORY_COLS if c in cols],
+        "log_therapy_categories": [f"log_{c}" for c in CATEGORY_COLS
+                            if f"log_{c}" in cols],
     }
  
 

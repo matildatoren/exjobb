@@ -56,10 +56,16 @@ CONFIG = {
 
     # Input — träningskomponenter att inkludera i komponentanalysen
     "hour_components": [
-        ("log_total_home_training_hours",  "Home training"),
-        ("log_total_other_training_hours", "Sports / other"),
-        ("log_neurohab_hours",             "Intensive therapy"),
-        ("log_active_total_hours",         "Combined active total"),
+        # ("log_total_home_training_hours",  "Home training"),
+        # ("log_total_other_training_hours", "Sports / other"),
+        # ("log_neurohab_hours",             "Intensive therapy"),
+        # ("log_active_total_hours",         "Combined active total"),
+        ("log_cat_neurodevelopmental_reflex",         "Neurodevelopmental and Reflex based therapies"),
+        ("log_cat_motor_learning_task",         "Motor learning and task oriented learning"),
+        ("log_cat_technology_assisted",         "Technology assisted therapies"),
+        ("log_cat_suit_based",         "Suit based therapies"),
+        ("log_cat_physical_conditioning",         "Physical conditioning and activity based therapies"),
+        ("log_cat_complementary",         "Complementary therapies"),
     ],
 
     # Input — kolumn som används i overall dose-response-plotten
@@ -91,11 +97,15 @@ def build_analysis_df(
     Returns a pandas DataFrame with:
       delta_score, hour components, active_total_hours, med_* columns.
     """
+    overall = CONFIG["overall_feature"]
+
     keep = (
         ["introductory_id", "age", delta_col]
         + [col for col, _ in CONFIG["hour_components"] if col in master.columns]
+        + ([overall] if overall in master.columns else [])  
         + [c for c in master.columns if c.startswith("med_")]
     )
+
     keep = [c for c in keep if c in master.columns]   # guard against missing cols
 
     df = (
@@ -271,7 +281,11 @@ def plot_training_components(
     active_df = results["active_df"]
     panels    = results["component_results"]
 
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    n       = len(panels)
+    n_cols  = 3                       
+    n_rows  = (n + n_cols - 1) // n_cols 
+
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 5 * n_rows))
     axes = axes.flatten()
 
     for i, r in enumerate(panels):
