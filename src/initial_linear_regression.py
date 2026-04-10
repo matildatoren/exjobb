@@ -51,6 +51,10 @@ CONFIG = {
             "delta_col": "delta_combined_score_setvalue",
             "title":     "Combined Score",
         },
+        "simplified": {
+            "delta_col": "delta_motorical_score",
+            "title":     "Simplified Score",
+        }
         
     },
 

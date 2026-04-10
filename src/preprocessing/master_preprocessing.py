@@ -18,6 +18,10 @@ from preprocessing.preprocessing_it import (
     process_medical_treatments_per_user_per_age,
 )
 
+from preprocessing.preprocessing_md import (
+    process_motorical_score_1,
+)
+
 from preprocessing.motor_scores import (
     motorscore_milestones_setvalue,
     motorscore_impairments_setvalue,
@@ -180,7 +184,9 @@ def _prefix_medical_cols(medical_df: pl.DataFrame) -> pl.DataFrame:
  
 def _build_motor_table(motorical_dev: pl.DataFrame) -> pl.DataFrame:
 
- 
+    # ── score 1 ─────────────────────────────────────────────────────────────
+    score1 = process_motorical_score_1(motorical_dev)
+
     # ── milestone scores ────────────────────────────────────────────────────
     ms_set = (
         motorscore_milestones_setvalue(motorical_dev)
@@ -221,6 +227,7 @@ def _build_motor_table(motorical_dev: pl.DataFrame) -> pl.DataFrame:
         .join(ms_norm,  on=["introductory_id", "age"], how="left")
         .join(imp_set,  on=["introductory_id", "age"], how="left")
         .join(imp_norm, on=["introductory_id", "age"], how="left")
+        .join(score1,    on=["introductory_id", "age"], how="left")
         .sort(["introductory_id", "age"])
     )
 
@@ -249,6 +256,7 @@ def _build_motor_table(motorical_dev: pl.DataFrame) -> pl.DataFrame:
         "impairment_score",
         "combined_score_setvalue",
         "combined_score",
+        "motorical_score",  
     ]
 
     motor = motor.with_columns([
@@ -411,6 +419,7 @@ def get_feature_groups(master_df: pl.DataFrame) -> dict[str, list[str]]:
             "combined_score",
         ] if c in cols],
         "therapy_categories": [c for c in CATEGORY_COLS if c in cols],
+        "motor_score_1": [c for c in ["motorical_score", "delta_motorical_score"] if c in cols],
         "log_therapy_categories": [f"log_{c}" for c in CATEGORY_COLS
                             if f"log_{c}" in cols],
     }

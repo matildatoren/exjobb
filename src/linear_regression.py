@@ -44,12 +44,18 @@ IMAGES_DIR.mkdir(exist_ok=True)
 #     4. milestone_score
 #     5. impairment_score_setvalue
 #     6. impairment_score
-#     7. delta_milestone_score_setvalue
-#     8. delta_milestone_score
-#     9. delta_impairment_score_setvalue
-#    10. delta_impairment_score
+#     7. motorical_score
+#     8. combined_score_setvalue
+#     9. combined_score
+#    10. delta_milestone_score_setvalue
+#    11. delta_milestone_score
+#    12. delta_impairment_score_setvalue
+#    13. delta_impairment_score
+#    14. delta_combined_score_setvalue
+#    15. delta_combined_score
+#    16. delta_motorical_score
 
-TARGET = "delta_milestone_score_setvalue"
+TARGET = "delta_motorical_score"
 TRAINING_FEATURES = [
     #"age",
     #"gmfcs_int",
@@ -70,22 +76,22 @@ TRAINING_FEATURES = [
     #"med_Orthopedic surgery (e.g., tendon lengthening, hip surgery)",
     #"med_Leg casting",
     #"has_any_medical_treatment",
-    #"log_total_home_training_hours",
-    #"log_total_other_training_hours",
+    "log_total_home_training_hours",
+    "log_total_other_training_hours",
     #"log_active_total_hours",
-    #"log_neurohab_hours",
+    "log_neurohab_hours",
     # "cat_neurodevelopmental_reflex",
     # "cat_motor_learning_task",
     # "cat_technology_assisted",
     # "cat_suit_based",
     # "cat_physical_conditioning",
     # "cat_complementary",
-    "log_cat_neurodevelopmental_reflex",
-    "log_cat_motor_learning_task",
-    "log_cat_technology_assisted",
-    "log_cat_suit_based",
-    "log_cat_physical_conditioning",
-    "log_cat_complementary",
+    # "log_cat_neurodevelopmental_reflex",
+    # "log_cat_motor_learning_task",
+    # "log_cat_technology_assisted",
+    # "log_cat_suit_based",
+    # "log_cat_physical_conditioning",
+    # "log_cat_complementary",
     ]
 
 
@@ -207,10 +213,10 @@ def plot_shap(result: dict):
 
     print(f"  Computing SHAP values for [{result['name']}] …")
     explainer = shap.TreeExplainer(model)
-    shap_values = explainer(X)
+    shap_values = explainer.shap_values(X)
 
     plt.figure()
-    shap.plots.beeswarm(shap_values, max_display=10, show=False)
+    shap.summary_plot(shap_values, X, plot_type="dot", max_display=10, show=False)
     plt.title(f"{result['name']} — SHAP Beeswarm")
     plt.tight_layout()
     path = IMAGES_DIR / f"shap_{result['name'].replace(' ', '_')}.png"
@@ -337,8 +343,13 @@ def main():
         plot_feature_importance(result)
         plot_partial_dependence(result)
 
-    # SHAP only for best tree model
-    plot_shap(best)
+    # Kör SHAP på bästa trädmodell
+    tree_preference = ["Random Forest", "Gradient Boosting"]
+    best_tree_name = next((n for n in tree_preference if n in results), None)
+    if best_tree_name:
+        plot_shap(results[best_tree_name])
+    else:
+        print("  Inga trädmodeller tillgängliga för SHAP.")
 
     plt.show()
     print("\nDone.")
