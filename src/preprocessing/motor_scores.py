@@ -477,7 +477,7 @@ def motorscore_impairments_future(
         .sort(["introductory_id", "age"])
     )
 
-# kombinerat score 
+# kombinerat score (medelvärdet av milestone och impairment-settvalue) 
 def motorscore_combined(milestone_df: pl.DataFrame, impairment_df: pl.DataFrame,) -> pl.DataFrame:
     return (
         milestone_df.select(["introductory_id", "age", "milestone_score"])
