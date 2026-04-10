@@ -17,7 +17,7 @@ from dataloader import load_data
 # SETTINGS
 # ---------------------------
 
-MODEL_NAME = "qwen3.5:9b"
+MODEL_NAME = "gemma4:26b"
 
 INTRODUCTORY_IDS = [
     "c0990a55-916e-47ba-b29a-aee83d9f33c9",
