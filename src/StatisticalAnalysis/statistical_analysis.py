@@ -39,15 +39,15 @@ IMAGES_DIR.mkdir(exist_ok=True)
 # ─── Config ───────────────────────────────────────────────────────────────────
 
 TARGETS = [
-    "milestone_score_setvalue",
-    "delta_milestone_score_setvalue",
+    "delta_impairment_score_setvalue",
+    "delta_motorical_score",
 ]
 
 CONTINUOUS_FEATURES = [
     "total_home_training_hours",
     "total_other_training_hours",
     "neurohab_hours",
-    "active_total_hours",
+    # "active_total_hours" excluded — it is the sum of the three above
 ]
 
 BINARY_FEATURES = [
@@ -63,15 +63,14 @@ FEATURE_LABELS = {
     "total_home_training_hours":  "Home training (hrs/yr)",
     "total_other_training_hours": "Other training (hrs/yr)",
     "neurohab_hours":             "Intensive therapy (hrs/yr)",
-    "active_total_hours":         "Total active hours (hrs/yr)",
     "has_any_device":             "Uses any device",
     "has_any_medical_treatment":  "Any medical treatment",
     "gmfcs_int":                  "GMFCS level",
 }
 
 TARGET_LABELS = {
-    "milestone_score_setvalue":        "Motor milestone score",
-    "delta_milestone_score_setvalue":  "Δ Motor milestone score",
+    "delta_impairment_score_setvalue": "Δ Impairment score",
+    "delta_motorical_score":           "Δ Motorical score",
 }
 
 # ─── Data preparation ─────────────────────────────────────────────────────────
@@ -81,7 +80,19 @@ def prepare_data(master) -> pd.DataFrame:
     all_cols = CONTINUOUS_FEATURES + BINARY_FEATURES + CONTROL_VARS + TARGETS
     existing = [c for c in all_cols if c in df.columns]
     df = df[existing].copy()
+
+    # ── Drop rows where all training is zero/NaN ─────────────────────────────
+    # Done BEFORE fillna so NaN values are not mistaken for reported zeros.
+    # We use fillna(0) only for the sum check itself, not on the dataframe yet.
+    hour_cols = [c for c in CONTINUOUS_FEATURES if c in df.columns]
+    has_training = df[hour_cols].fillna(0).sum(axis=1) > 0
+    n_dropped = (~has_training).sum()
+    print(f"  Dropping {n_dropped} rows with no training reported")
+    df = df[has_training].reset_index(drop=True)
+
+    # ── Fill NaN in continuous/control features after filtering ───────────────
     df[CONTINUOUS_FEATURES + CONTROL_VARS] = df[CONTINUOUS_FEATURES + CONTROL_VARS].fillna(0)
+
     return df
 
 
@@ -94,7 +105,6 @@ def run_spearman(df: pd.DataFrame) -> pd.DataFrame:
     for target in TARGETS:
         if target not in df.columns:
             continue
-        target_data = df[target].dropna()
 
         for feat in features:
             if feat not in df.columns:
@@ -173,7 +183,6 @@ def run_group_comparisons(df: pd.DataFrame) -> pd.DataFrame:
 
             stat, p = stats.mannwhitneyu(group1, group0, alternative="two-sided")
 
-            # Effect size: rank-biserial correlation
             n1, n0 = len(group1), len(group0)
             effect_size = 1 - (2 * stat) / (n1 * n0)
 
@@ -302,7 +311,6 @@ def plot_spearman_heatmap(spearman_df: pd.DataFrame):
     ax.set_yticks(range(len(pivot.index)))
     ax.set_yticklabels(pivot.index)
 
-    # Annotate cells with ρ and significance stars
     for i in range(len(pivot.index)):
         for j in range(len(pivot.columns)):
             rho = pivot.values[i, j]
@@ -323,9 +331,8 @@ def plot_spearman_heatmap(spearman_df: pd.DataFrame):
 
 def plot_group_boxplots(df: pd.DataFrame):
     """Box plots comparing score distributions by binary feature groups."""
-    n_feats   = len(BINARY_FEATURES)
-    n_targets = len(TARGETS)
     existing_targets = [t for t in TARGETS if t in df.columns]
+    n_feats = len(BINARY_FEATURES)
 
     fig, axes = plt.subplots(
         len(existing_targets), n_feats,

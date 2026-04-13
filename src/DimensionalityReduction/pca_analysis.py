@@ -12,6 +12,9 @@ from sklearn.decomposition import PCA
 BASE_DIR   = Path(__file__).resolve().parent.parent
 IMAGES_DIR = BASE_DIR / "images"
 
+IMAGES_DIR = Path(__file__).resolve().parent / "images"
+IMAGES_DIR.mkdir(exist_ok=True)
+
 GMFCS_COLORS = {
     "I":   "green",
     "II":  "blue",
@@ -277,9 +280,9 @@ def run_pca_motor_trajectory(
 # -------------------------------------------------------
 
 if __name__ == "__main__":
-    from dataloader import load_data
-    from connect_db import get_connection
-    from preprocessing.motor_scores import (
+    from src.dataloader import load_data
+    from src.connect_db import get_connection
+    from src.preprocessing.motor_scores import (
         motorscore_milestones_setvalue,
         motorscore_impairments_setvalue,
     )
@@ -289,8 +292,8 @@ if __name__ == "__main__":
     conn = get_connection()
     data = load_data(conn)
 
-    milestone_df  = motorscore_milestones_setvalue(data["motorical_development"])
-    impairment_df = motorscore_impairments_setvalue(data["motorical_development"])
+    milestone_df  = motorscore_milestones_setvalue(data["motorical_development"], data["introductory"])
+    impairment_df = motorscore_impairments_setvalue(data["motorical_development"], data["introductory"])
     home_df       = process_training_per_type_per_year(data["home_training"])
     neurohab_df   = process_neurohab_hours_per_user_per_age(data["intensive_therapies"])
 

@@ -61,10 +61,10 @@ N_NAMED_BY_AGE_GMFCS: dict[int, dict[int, int]] = {
  
 _GMFCS_STR_TO_INT: dict[str, int] = {
     "Level I – Walks without limitations": 1,
-    "Level II – Walks with limitations": 2,
-    "Level III – Walks using a hand-held mobility device": 3,
-    "Level IV – Self-mobility with limitations; may use powered mobility": 4,
-    "Level V – Transported in a manual wheelchair": 5,
+    "Level II – Walks with some limitations": 2,
+    "Level III – Walks with assistive devices": 3,
+    "Level IV – Limited mobility, primarily uses a wheelchair": 4,
+    "Level V – Severe limitations, needs full assistance for mobility": 5,
 }
  
 # ════════════════════════════════════════════════════════════════════════════
