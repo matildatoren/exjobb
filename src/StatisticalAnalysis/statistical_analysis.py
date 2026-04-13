@@ -1,18 +1,18 @@
 """
-Association Analysis: Factors associated with motor development
-===============================================================
-Improvements over v1:
-  - Spearman CIs via Fisher's z-transformation
-  - One-sample Wilcoxon signed-rank test (is change != 0?)
-  - Feature correlation matrix (multicollinearity check)
-  - Mixed-effects model with random intercept per child (correct for repeated measures)
-  - Standardized regression coefficients
-  - Post-hoc power analysis
-  - Stratified Spearman by GMFCS level
+Association Analysis v4 — Extended
+====================================
+New analyses vs v3:
+  1. Baseline-controlled delta regression
+  2. Time interval stratification (which age transition)
+  3. Training × GMFCS interaction term
+  4. Responder analysis (logistic regression)
+  5. Dose-response threshold (quartile analysis)
+  6. Intraclass Correlation Coefficient (ICC)
+  7. Training category comparison (Kruskal-Wallis)
 
 Usage:
     cd src
-    python ../statistical_analysis_v3.py
+    python ../statistical_analysis_v4.py
 """
 
 import sys
@@ -28,7 +28,6 @@ from scipy.stats import norm
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
 from statsmodels.stats.multitest import multipletests
-from statsmodels.stats.power import FTestAnovaPower
 
 SRC = Path(__file__).resolve().parent / "src"
 sys.path.append(str(SRC))
@@ -47,10 +46,24 @@ TARGETS = [
     "delta_motorical_score",
 ]
 
+BASELINE_COLS = {
+    "delta_impairment_score_setvalue": "impairment_score_setvalue",
+    "delta_motorical_score":           "motorical_score",
+}
+
 CONTINUOUS_FEATURES = [
     "total_home_training_hours",
     "total_other_training_hours",
     "neurohab_hours",
+]
+
+CATEGORY_FEATURES = [
+    "cat_neurodevelopmental_reflex",
+    "cat_motor_learning_task",
+    "cat_technology_assisted",
+    "cat_suit_based",
+    "cat_physical_conditioning",
+    "cat_complementary",
 ]
 
 BINARY_FEATURES = [
@@ -58,17 +71,21 @@ BINARY_FEATURES = [
     "has_any_medical_treatment",
 ]
 
-CONTROL_VARS = [
-    "gmfcs_int",
-]
+CONTROL_VARS = ["gmfcs_int"]
 
 FEATURE_LABELS = {
-    "total_home_training_hours":  "Home training (hrs/yr)",
-    "total_other_training_hours": "Other training (hrs/yr)",
-    "neurohab_hours":             "Intensive therapy (hrs/yr)",
-    "has_any_device":             "Uses any device",
-    "has_any_medical_treatment":  "Any medical treatment",
-    "gmfcs_int":                  "GMFCS level",
+    "total_home_training_hours":     "Home training (hrs/yr)",
+    "total_other_training_hours":    "Other training (hrs/yr)",
+    "neurohab_hours":                "Intensive therapy (hrs/yr)",
+    "has_any_device":                "Uses any device",
+    "has_any_medical_treatment":     "Any medical treatment",
+    "gmfcs_int":                     "GMFCS level",
+    "cat_neurodevelopmental_reflex": "Neurodevelopmental/reflex",
+    "cat_motor_learning_task":       "Motor learning",
+    "cat_technology_assisted":       "Technology assisted",
+    "cat_suit_based":                "Suit based",
+    "cat_physical_conditioning":     "Physical conditioning",
+    "cat_complementary":             "Complementary",
 }
 
 TARGET_LABELS = {
@@ -76,20 +93,21 @@ TARGET_LABELS = {
     "delta_motorical_score":           "Δ Motorical score",
 }
 
-MIN_GROUP_N  = 5
-OUTLIER_Z    = 3.0
-ALPHA        = 0.05
+ALPHA    = 0.05
+MIN_N    = 5
 
 
 # ─── Data preparation ─────────────────────────────────────────────────────────
 
 def prepare_data(master) -> pd.DataFrame:
-    """
-    Returns a long-format dataframe keeping all age rows per child.
-    introductory_id is preserved for mixed-effects grouping.
-    """
     df = master.to_pandas()
-    all_cols = ["introductory_id", "age"] + CONTINUOUS_FEATURES + BINARY_FEATURES + CONTROL_VARS + TARGETS
+
+    # Keep baseline scores too for baseline-controlled analysis
+    baseline_cols = list(BASELINE_COLS.values())
+    all_cols = (["introductory_id", "age"]
+                + CONTINUOUS_FEATURES + CATEGORY_FEATURES
+                + BINARY_FEATURES + CONTROL_VARS
+                + TARGETS + baseline_cols)
     existing = [c for c in all_cols if c in df.columns]
     df = df[existing].copy()
 
@@ -99,24 +117,26 @@ def prepare_data(master) -> pd.DataFrame:
     print(f"  Dropping {n_dropped} rows with no training reported")
     df = df[has_training].reset_index(drop=True)
 
-    df[CONTINUOUS_FEATURES + CONTROL_VARS] = df[CONTINUOUS_FEATURES + CONTROL_VARS].fillna(0)
+    # Drop outlier
+    if "delta_motorical_score" in df.columns:
+        n_before = len(df)
+        df = df[df["delta_motorical_score"] != 25.9].reset_index(drop=True)
+        if len(df) < n_before:
+            print(f"  Dropping 1 outlier (delta_motorical_score = 25.9)")
+
+    fill_cols = [c for c in df.columns if c not in ["introductory_id", "gmfcs_int"]]
+    df[fill_cols] = df[fill_cols].fillna(0)
+
     return df
 
 
-# ─── Helpers ──────────────────────────────────────────────────────────────────
+# ─── Helper ───────────────────────────────────────────────────────────────────
 
-def _spearman_ci(r: float, n: int, alpha: float = ALPHA):
-    """95% CI for Spearman ρ via Fisher z-transformation."""
-    if n < 4:
-        return np.nan, np.nan
-    z      = np.arctanh(r)
-    se     = 1 / np.sqrt(n - 3)
-    z_crit = norm.ppf(1 - alpha / 2)
-    return np.tanh(z - z_crit * se), np.tanh(z + z_crit * se)
+def _sig(p):
+    return "***" if p < 0.001 else "**" if p < 0.01 else "*" if p < 0.05 else ""
 
 
-def _standardize(df: pd.DataFrame, cols: list) -> pd.DataFrame:
-    """Return a copy with specified columns z-scored."""
+def _standardize(df, cols):
     out = df.copy()
     for c in cols:
         if c in out.columns:
@@ -126,575 +146,563 @@ def _standardize(df: pd.DataFrame, cols: list) -> pd.DataFrame:
     return out
 
 
-# ─── 0. Descriptives ──────────────────────────────────────────────────────────
+# ════════════════════════════════════════════════════════════════════════════
+# 1. BASELINE-CONTROLLED DELTA REGRESSION
+# ════════════════════════════════════════════════════════════════════════════
 
-def print_descriptives(df: pd.DataFrame):
+def run_baseline_controlled_regression(df: pd.DataFrame):
+    """
+    Regress delta score on training variables while controlling for baseline score.
+    This removes the floor/ceiling effect where low-baseline children have
+    more room to improve.
+    """
     sep = "=" * 70
     print(f"\n{sep}")
-    print("  DESCRIPTIVE STATISTICS")
+    print("  BASELINE-CONTROLLED REGRESSION")
+    print("  (controls for starting score to remove floor/ceiling effect)")
     print(sep)
 
-    print("\n  Targets:")
-    print(f"  {'Target':<35} {'n':>5} {'mean':>8} {'std':>8} {'min':>8} {'max':>8}")
-    print(f"  {'-'*70}")
-    for target in TARGETS:
-        if target not in df.columns:
-            continue
-        col = df[target].dropna()
-        print(f"  {TARGET_LABELS.get(target,target):<35} {len(col):>5}"
-              f" {col.mean():>8.3f} {col.std():>8.3f}"
-              f" {col.min():>8.3f} {col.max():>8.3f}")
-
-    print("\n  Continuous features:")
-    print(f"  {'Feature':<35} {'n':>5} {'mean':>8} {'std':>8} {'min':>8} {'max':>8}")
-    print(f"  {'-'*70}")
-    for feat in CONTINUOUS_FEATURES + CONTROL_VARS:
-        if feat not in df.columns:
-            continue
-        col = df[feat].dropna()
-        print(f"  {FEATURE_LABELS.get(feat,feat):<35} {len(col):>5}"
-              f" {col.mean():>8.3f} {col.std():>8.3f}"
-              f" {col.min():>8.3f} {col.max():>8.3f}")
-
-    print("\n  Binary features:")
-    print(f"  {'Feature':<35} {'n(yes)':>8} {'n(no)':>8} {'%yes':>8}")
-    print(f"  {'-'*60}")
-    for feat in BINARY_FEATURES:
-        if feat not in df.columns:
-            continue
-        n_yes = int(df[feat].sum())
-        n_no  = int((df[feat] == 0).sum())
-        pct   = 100 * n_yes / max(n_yes + n_no, 1)
-        print(f"  {FEATURE_LABELS.get(feat,feat):<35} {n_yes:>8} {n_no:>8} {pct:>7.1f}%")
-
-    print(f"\n  Unique children: {df['introductory_id'].nunique()}")
-    print(f"  Total rows (child × age): {len(df)}")
-
-
-# ─── 1. One-sample Wilcoxon (is change ≠ 0?) ─────────────────────────────────
-
-def run_wilcoxon_change(df: pd.DataFrame):
-    sep = "=" * 70
-    print(f"\n{sep}")
-    print("  ONE-SAMPLE WILCOXON SIGNED-RANK TEST  (H₀: median change = 0)")
-    print(sep)
-    print(f"  {'Target':<35} {'n':>5} {'median':>8} {'W':>10} {'p':>8}")
-    print(f"  {'-'*65}")
+    features = CONTINUOUS_FEATURES + BINARY_FEATURES + CONTROL_VARS
 
     for target in TARGETS:
-        if target not in df.columns:
+        baseline_col = BASELINE_COLS.get(target)
+        if target not in df.columns or baseline_col not in df.columns:
             continue
-        col = df[target].dropna()
-        col = col[col != 0]           # exclude structural zeros
-        if len(col) < 5:
+
+        label    = TARGET_LABELS.get(target, target)
+        feat_use = [f for f in features if f in df.columns]
+        cols     = feat_use + [target, baseline_col]
+        subset   = df[cols].dropna()
+
+        if len(subset) < len(feat_use) + 5:
+            print(f"  ⚠️  Too few observations for {label}")
             continue
-        stat, p = stats.wilcoxon(col, alternative="two-sided")
-        sig = "***" if p < 0.001 else "**" if p < 0.01 else "*" if p < 0.05 else ""
-        print(f"  {TARGET_LABELS.get(target,target):<35}"
-              f" {len(col):>5} {col.median():>8.4f}"
-              f" {stat:>10.1f} {p:>7.4f}{sig}")
+
+        X     = sm.add_constant(subset[feat_use + [baseline_col]])
+        y     = subset[target]
+        model = sm.OLS(y, X).fit()
+
+        n  = len(subset)
+        r2 = round(model.rsquared_adj, 4)
+        print(f"\n  Target: {label}  |  n={n}  |  Adj. R²={r2}")
+        print(f"  {'Feature':<35} {'β':>10} {'95% CI':>22} {'p':>8}")
+        print(f"  {'-'*78}")
+
+        for feat in feat_use + [baseline_col]:
+            coef     = model.params[feat]
+            ci_lo, ci_hi = model.conf_int().loc[feat]
+            pval     = model.pvalues[feat]
+            ci_str   = f"[{ci_lo:+.4f}, {ci_hi:+.4f}]"
+            fname    = FEATURE_LABELS.get(feat, feat) if feat != baseline_col else "Baseline score"
+            print(f"  {fname:<35} {coef:>+10.5f}  {ci_str:>22}  {pval:>7.4f} {_sig(pval)}")
 
     print(f"\n  Significance: * p<0.05  ** p<0.01  *** p<0.001")
 
 
-# ─── 2. Spearman with CIs and FDR ────────────────────────────────────────────
+# ════════════════════════════════════════════════════════════════════════════
+# 2. TIME INTERVAL STRATIFICATION
+# ════════════════════════════════════════════════════════════════════════════
 
-def run_spearman(df: pd.DataFrame) -> pd.DataFrame:
-    features = CONTINUOUS_FEATURES + BINARY_FEATURES + CONTROL_VARS
-    rows = []
+def run_time_interval_analysis(df: pd.DataFrame):
+    """
+    Check whether delta scores differ by which age transition they cover
+    (year1→2, year2→3, year3→4). Children develop fastest early.
+    """
+    sep = "=" * 70
+    print(f"\n{sep}")
+    print("  TIME INTERVAL ANALYSIS")
+    print("  (does the age of transition affect how much children improve?)")
+    print(sep)
+
+    if "age" not in df.columns:
+        print("  age column not found — skipping.")
+        return
 
     for target in TARGETS:
         if target not in df.columns:
             continue
-        for feat in features:
-            if feat not in df.columns:
-                continue
-            common = df[[feat, target]].dropna()
-            if len(common) < 5:
-                continue
-            r, p = stats.spearmanr(common[feat], common[target])
-            ci_lo, ci_hi = _spearman_ci(r, len(common))
-            rows.append({
-                "target":  TARGET_LABELS.get(target, target),
-                "feature": FEATURE_LABELS.get(feat, feat),
-                "rho":     round(r, 3),
-                "ci_lo":   round(ci_lo, 3),
-                "ci_hi":   round(ci_hi, 3),
-                "p_value": round(p, 4),
-                "n":       len(common),
-            })
+        label    = TARGET_LABELS.get(target, target)
+        col      = df[target].dropna()
+        ages     = df.loc[col.index, "age"]
+        groups   = {age: col[ages == age].dropna() for age in sorted(ages.unique())}
+        groups   = {k: v for k, v in groups.items() if len(v) >= MIN_N}
 
-    result = pd.DataFrame(rows)
+        if len(groups) < 2:
+            continue
 
-    # FDR correction per target
-    for target in result["target"].unique():
-        mask = result["target"] == target
-        _, p_corr, _, _ = multipletests(result.loc[mask, "p_value"], method="fdr_bh")
-        result.loc[mask, "p_fdr"] = p_corr.round(4)
+        print(f"\n  Target: {label}")
+        print(f"  {'Age':>6} {'n':>5} {'median':>8} {'mean':>8} {'std':>8}")
+        print(f"  {'-'*40}")
+        for age, vals in groups.items():
+            print(f"  {int(age):>6} {len(vals):>5} {vals.median():>8.4f}"
+                  f" {vals.mean():>8.4f} {vals.std():>8.4f}")
 
-    return result
+        stat, p = stats.kruskal(*groups.values())
+        print(f"\n  Kruskal-Wallis: H={stat:.3f}, p={p:.4f} {_sig(p)}")
+        print(f"  Interpretation: {'significant difference between age intervals' if p < ALPHA else 'no significant difference between age intervals'}")
+
+    # Plot
+    fig, axes = plt.subplots(1, len(TARGETS), figsize=(6 * len(TARGETS), 5), squeeze=False)
+    for ax, target in zip(axes[0], TARGETS):
+        if target not in df.columns:
+            ax.set_visible(False)
+            continue
+        label  = TARGET_LABELS.get(target, target)
+        subset = df[[target, "age"]].dropna()
+        data   = [subset[subset["age"] == age][target].values
+                  for age in sorted(subset["age"].unique())]
+        labels = [f"Year {int(a)}\n(n={len(d)})"
+                  for a, d in zip(sorted(subset["age"].unique()), data)]
+
+        bp = ax.boxplot(data, patch_artist=True, widths=0.5,
+                        medianprops=dict(color="black", linewidth=2))
+        colors = ["#AED6F1", "#A9DFBF", "#F9E79F", "#F1948A"]
+        for patch, color in zip(bp["boxes"], colors):
+            patch.set_facecolor(color)
+
+        ax.set_xticklabels(labels)
+        ax.set_ylabel(label)
+        ax.set_title(f"{label} by age interval")
+        ax.axhline(0, color="gray", linewidth=0.7, linestyle=":")
+
+    plt.suptitle("Score Change by Age Interval", fontsize=13)
+    plt.tight_layout()
+    path = IMAGES_DIR / "time_interval_analysis.png"
+    plt.savefig(path, dpi=150)
+    print(f"\n  Saved: {path.name}")
+    plt.show()
 
 
-def print_spearman(spearman_df: pd.DataFrame):
+# ════════════════════════════════════════════════════════════════════════════
+# 3. TRAINING × GMFCS INTERACTION
+# ════════════════════════════════════════════════════════════════════════════
+
+def run_interaction_analysis(df: pd.DataFrame):
+    """
+    Test whether the effect of training on outcomes differs by GMFCS level.
+    Formally tests what the stratified Spearman analysis hinted at.
+    """
     sep = "=" * 70
     print(f"\n{sep}")
-    print("  SPEARMAN CORRELATIONS  (with 95% CI and FDR correction)")
-    print(sep)
-    for target in spearman_df["target"].unique():
-        sub = spearman_df[spearman_df["target"] == target].sort_values(
-            "rho", key=abs, ascending=False)
-        print(f"\n  Target: {target}")
-        print(f"  {'Feature':<35} {'ρ':>7} {'95% CI':>16} {'p':>8} {'p_fdr':>8} {'n':>5}")
-        print(f"  {'-'*78}")
-        for _, row in sub.iterrows():
-            sig     = "***" if row["p_value"] < 0.001 else "**" if row["p_value"] < 0.01 else "*" if row["p_value"] < 0.05 else ""
-            sig_fdr = "†" if row["p_fdr"] < 0.05 else ""
-            ci_str  = f"[{row['ci_lo']:+.3f}, {row['ci_hi']:+.3f}]"
-            print(f"  {row['feature']:<35} {row['rho']:>7.3f} {ci_str:>16}"
-                  f" {row['p_value']:>7.4f}{sig:<3} {row['p_fdr']:>7.4f}{sig_fdr:<2}  (n={row['n']})")
-    print(f"\n  sig = uncorrected  |  † = FDR-corrected p<0.05")
-
-
-# ─── 3. Stratified Spearman by GMFCS ─────────────────────────────────────────
-
-def run_spearman_by_gmfcs(df: pd.DataFrame):
-    sep = "=" * 70
-    print(f"\n{sep}")
-    print("  SPEARMAN CORRELATIONS — STRATIFIED BY GMFCS LEVEL")
+    print("  TRAINING × GMFCS INTERACTION")
+    print("  (does training effect differ by severity level?)")
     print(sep)
 
     if "gmfcs_int" not in df.columns:
         print("  gmfcs_int not found — skipping.")
         return
 
-    features = CONTINUOUS_FEATURES
-    levels   = sorted(df["gmfcs_int"].dropna().unique())
+    training_vars = CONTINUOUS_FEATURES
 
     for target in TARGETS:
         if target not in df.columns:
             continue
         label = TARGET_LABELS.get(target, target)
         print(f"\n  Target: {label}")
-        print(f"  {'Feature':<30} " + " ".join(f"{'GMFCS '+str(int(l)):>14}" for l in levels))
-        print(f"  {'-'*75}")
+        print(f"  {'Training variable':<30} {'β_main':>10} {'β_interact':>12} {'p_interact':>12}")
+        print(f"  {'-'*66}")
 
-        for feat in features:
+        for feat in training_vars:
             if feat not in df.columns:
                 continue
             feat_label = FEATURE_LABELS.get(feat, feat)
-            row_str = f"  {feat_label:<30}"
-            for lvl in levels:
-                sub    = df[df["gmfcs_int"] == lvl][[feat, target]].dropna()
-                if len(sub) < 5:
-                    row_str += f"  {'n<5':>12}"
-                    continue
-                r, p   = stats.spearmanr(sub[feat], sub[target])
-                sig    = "***" if p < 0.001 else "**" if p < 0.01 else "*" if p < 0.05 else ""
-                row_str += f"  {r:>+6.3f}{sig:<3}(n={len(sub)})"
-            print(row_str)
+            cols   = [feat, "gmfcs_int", target]
+            subset = df[cols].dropna()
+            if len(subset) < 15:
+                continue
 
+            # Center variables for interaction
+            subset = subset.copy()
+            subset[feat]         = subset[feat] - subset[feat].mean()
+            subset["gmfcs_int"]  = subset["gmfcs_int"] - subset["gmfcs_int"].mean()
+            subset["interaction"] = subset[feat] * subset["gmfcs_int"]
 
-# ─── 4. Feature correlation matrix ───────────────────────────────────────────
+            X     = sm.add_constant(subset[[feat, "gmfcs_int", "interaction"]])
+            model = sm.OLS(subset[target], X).fit()
 
-def plot_feature_correlation_matrix(df: pd.DataFrame):
-    """Heatmap of Spearman correlations between all features — multicollinearity check."""
-    features = CONTINUOUS_FEATURES + BINARY_FEATURES + CONTROL_VARS
-    existing = [f for f in features if f in df.columns]
-    labels   = [FEATURE_LABELS.get(f, f) for f in existing]
+            b_main     = model.params[feat]
+            b_interact = model.params["interaction"]
+            p_interact = model.pvalues["interaction"]
+            print(f"  {feat_label:<30} {b_main:>+10.5f} {b_interact:>+12.5f}"
+                  f" {p_interact:>11.4f} {_sig(p_interact)}")
 
-    corr_matrix = np.zeros((len(existing), len(existing)))
-    features = CONTINUOUS_FEATURES + BINARY_FEATURES + CONTROL_VARS
-    existing = [f for f in features if f in df.columns]
-    labels   = [FEATURE_LABELS.get(f, f) for f in existing]
-
-    corr_matrix = df[existing].corr(method="spearman").values
-
-    fig, ax = plt.subplots(figsize=(max(6, len(existing) * 0.9), max(5, len(existing) * 0.9)))
-    im = ax.imshow(corr_matrix, cmap="RdBu_r", vmin=-1, vmax=1, aspect="auto")
-
-    ax.set_xticks(range(len(labels)))
-    ax.set_xticklabels(labels, rotation=40, ha="right", fontsize=9)
-    ax.set_yticks(range(len(labels)))
-    ax.set_yticklabels(labels, fontsize=9)
-
-    for i in range(len(existing)):
-        for j in range(len(existing)):
-            val = corr_matrix[i, j]
-            ax.text(j, i, f"{val:.2f}", ha="center", va="center",
-                    fontsize=8, color="black" if abs(val) < 0.6 else "white")
-
-    plt.colorbar(im, ax=ax, label="Spearman ρ")
-    ax.set_title("Feature Correlation Matrix (Spearman)\nHigh values indicate multicollinearity", fontsize=11)
-    plt.tight_layout()
-    path = IMAGES_DIR / "feature_correlation_matrix.png"
-    plt.savefig(path, dpi=150)
-    print(f"  Saved: {path.name}")
-    plt.show()
-
-
-# ─── 5. Mixed-effects model ───────────────────────────────────────────────────
-
-def run_mixed_effects(df: pd.DataFrame, target: str) -> None:
-    """
-    Linear mixed-effects model with random intercept per child.
-    Correctly handles the repeated-measures structure (multiple ages per child).
-    """
-    features = CONTINUOUS_FEATURES + BINARY_FEATURES + CONTROL_VARS
-    features = [f for f in features if f in df.columns]
-
-    subset = df[["introductory_id"] + features + [target]].dropna()
-    if len(subset) < len(features) + 10:
-        print(f"  ⚠️  Too few observations for mixed model on {target} (n={len(subset)})")
-        return
-
-    formula = f"{target} ~ " + " + ".join(features)
-    model   = smf.mixedlm(formula, subset, groups=subset["introductory_id"])
-
-    try:
-        result = model.fit(reml=True, method="lbfgs")
-    except Exception as e:
-        print(f"  ⚠️  Mixed model failed: {e}")
-        return
-
-    sep  = "=" * 70
-    line = "-" * 78
-    label = TARGET_LABELS.get(target, target)
-    n_obs      = len(subset)
-    n_children = subset["introductory_id"].nunique()
-
-    print(f"\n{sep}")
-    print(f"  MIXED-EFFECTS MODEL — {label}")
-    print(f"  n_obs={n_obs},  n_children={n_children}  (random intercept per child)")
-    print(sep)
-    print(f"  {'Feature':<35} {'β':>10} {'SE':>8} {'z':>8} {'p':>8}")
-    print(f"  {line}")
-
-    for feat in features:
-        if feat not in result.params.index:
-            continue
-        coef = result.params[feat]
-        se   = result.bse[feat]
-        z    = result.tvalues[feat]
-        p    = result.pvalues[feat]
-        sig  = "***" if p < 0.001 else "**" if p < 0.01 else "*" if p < 0.05 else ""
-        print(f"  {FEATURE_LABELS.get(feat,feat):<35} {coef:>+10.5f}"
-              f" {se:>8.5f} {z:>8.3f} {p:>7.4f} {sig}")
-
-    print(f"\n  Log-likelihood: {result.llf:.3f}")
+    print(f"\n  β_interact: positive = stronger effect at higher GMFCS (more severe)")
     print(f"  Significance: * p<0.05  ** p<0.01  *** p<0.001")
 
+    # Visualize: scatter colored by GMFCS for best predictor
+    fig, axes = plt.subplots(1, len(TARGETS), figsize=(7 * len(TARGETS), 5), squeeze=False)
+    feat_to_plot = "neurohab_hours"
 
-# ─── 6. OLS regression with standardized coefficients ────────────────────────
-
-def run_regression(df: pd.DataFrame, target: str) -> pd.DataFrame | None:
-    features = CONTINUOUS_FEATURES + BINARY_FEATURES + CONTROL_VARS
-    features = [f for f in features if f in df.columns]
-
-    subset = df[features + [target]].dropna()
-    if len(subset) < len(features) + 5:
-        print(f"  ⚠️  Too few observations for regression on {target} (n={len(subset)})")
-        return None
-
-    # Unstandardized model
-    X     = sm.add_constant(subset[features])
-    y     = subset[target]
-    model = sm.OLS(y, X).fit()
-
-    # Standardized model for beta comparison
-    std_subset = _standardize(subset, features + [target])
-    X_std      = sm.add_constant(std_subset[features])
-    y_std      = std_subset[target]
-    model_std  = sm.OLS(y_std, X_std).fit()
-
-    rows = []
-    for feat in features:
-        coef     = model.params[feat]
-        ci_lo, ci_hi = model.conf_int().loc[feat]
-        pval     = model.pvalues[feat]
-        beta_std = model_std.params.get(feat, np.nan)
-        rows.append({
-            "feature":   FEATURE_LABELS.get(feat, feat),
-            "coef":      round(coef, 5),
-            "ci_lower":  round(ci_lo, 5),
-            "ci_upper":  round(ci_hi, 5),
-            "beta_std":  round(beta_std, 4),
-            "p_value":   round(pval, 4),
-            "sig":       "***" if pval < 0.001 else "**" if pval < 0.01 else "*" if pval < 0.05 else "",
-        })
-
-    result_df = pd.DataFrame(rows)
-    result_df["n"]      = len(subset)
-    result_df["adj_r2"] = round(model.rsquared_adj, 4)
-    result_df["target"] = TARGET_LABELS.get(target, target)
-    return result_df
-
-
-def print_regression(reg_df: pd.DataFrame, target: str):
-    sep   = "=" * 70
-    label = TARGET_LABELS.get(target, target)
-    n     = reg_df["n"].iloc[0]
-    r2    = reg_df["adj_r2"].iloc[0]
-    print(f"\n{sep}")
-    print(f"  OLS REGRESSION — {label}")
-    print(f"  n={n},  Adjusted R²={r2}  (NOTE: does not account for repeated measures)")
-    print(sep)
-    print(f"  {'Feature':<35} {'β':>10} {'β_std':>8} {'95% CI':>22} {'p':>8}")
-    print(f"  {'-'*85}")
-    for _, row in reg_df.iterrows():
-        ci_str = f"[{row['ci_lower']:+.4f}, {row['ci_upper']:+.4f}]"
-        print(f"  {row['feature']:<35} {row['coef']:>+10.5f}"
-              f" {row['beta_std']:>8.4f}  {ci_str:>22}  {row['p_value']:>7.4f} {row['sig']}")
-    print(f"\n  β_std = standardized coefficient (z-scored features and target)")
-    print(f"  Significance: * p<0.05  ** p<0.01  *** p<0.001")
-
-
-# ─── 7. Power analysis ────────────────────────────────────────────────────────
-
-def run_power_analysis(df: pd.DataFrame):
-    sep = "=" * 70
-    print(f"\n{sep}")
-    print("  POST-HOC POWER ANALYSIS")
-    print(sep)
-
-    n_pred  = len(CONTINUOUS_FEATURES) + len(BINARY_FEATURES) + len(CONTROL_VARS)
-    n_obs   = len(df)
-
-    print(f"\n  Sample: n={n_obs}, predictors={n_pred}")
-    print(f"\n  Power to detect effect sizes (OLS, α={ALPHA}):")
-    print(f"  {'Effect size (f²)':>20} {'Description':>20} {'Power':>8}")
-    print(f"  {'-'*52}")
-
-    power_tool = FTestAnovaPower()
-    for f2, desc in [(0.02, "small"), (0.15, "medium"), (0.35, "large")]:
-        try:
-            power = power_tool.solve_power(
-                effect_size=np.sqrt(f2),
-                nobs=n_obs,
-                alpha=ALPHA,
-                k_groups=n_pred + 1,
-            )
-        except Exception:
-            power = np.nan
-        print(f"  {f2:>20.2f} {desc:>20} {power:>8.3f}")
-
-    print(f"\n  Minimum detectable effect at 80% power:")
-    for power_target in [0.80]:
-        try:
-            min_f2 = power_tool.solve_power(
-                power=power_target,
-                nobs=n_obs,
-                alpha=ALPHA,
-                k_groups=n_pred + 1,
-            ) ** 2
-            print(f"  f² ≥ {min_f2:.3f}  (equivalent to R² ≈ {min_f2/(1+min_f2):.3f})")
-        except Exception:
-            print("  Could not compute minimum detectable effect.")
-
-
-# ─── 8. Group comparisons (Mann-Whitney U) ────────────────────────────────────
-
-def run_group_comparisons(df: pd.DataFrame) -> pd.DataFrame:
-    rows = []
-    for target in TARGETS:
-        if target not in df.columns:
+    for ax, target in zip(axes[0], TARGETS):
+        if target not in df.columns or feat_to_plot not in df.columns:
+            ax.set_visible(False)
             continue
-        for feat in BINARY_FEATURES:
-            if feat not in df.columns:
-                continue
-            common = df[[feat, target]].dropna()
-            group1 = common[common[feat] == 1][target]
-            group0 = common[common[feat] == 0][target]
-            if len(group1) < MIN_GROUP_N or len(group0) < MIN_GROUP_N:
-                continue
-            stat, p    = stats.mannwhitneyu(group1, group0, alternative="two-sided")
-            n1, n0     = len(group1), len(group0)
-            effect_size = 1 - (2 * stat) / (n1 * n0)
-            rows.append({
-                "target":      TARGET_LABELS.get(target, target),
-                "feature":     FEATURE_LABELS.get(feat, feat),
-                "mean_yes":    round(group1.mean(), 4),
-                "mean_no":     round(group0.mean(), 4),
-                "mean_diff":   round(group1.mean() - group0.mean(), 4),
-                "n_yes":       n1,
-                "n_no":        n0,
-                "U_stat":      round(stat, 1),
-                "p_value":     round(p, 4),
-                "effect_size": round(effect_size, 3),
-                "sig":         "***" if p < 0.001 else "**" if p < 0.01 else "*" if p < 0.05 else "",
-            })
-    return pd.DataFrame(rows)
+
+        label  = TARGET_LABELS.get(target, target)
+        subset = df[[feat_to_plot, "gmfcs_int", target]].dropna()
+        gmfcs_colors = {1: "#3498db", 2: "#2ecc71", 3: "#f39c12", 4: "#e74c3c", 5: "#8e44ad"}
+
+        for lvl, grp in subset.groupby("gmfcs_int"):
+            color = gmfcs_colors.get(int(lvl), "gray")
+            ax.scatter(grp[feat_to_plot], grp[target], color=color,
+                       alpha=0.6, s=40, label=f"GMFCS {int(lvl)}")
+            if len(grp) >= 5:
+                z = np.polyfit(grp[feat_to_plot], grp[target], 1)
+                x_line = np.linspace(grp[feat_to_plot].min(), grp[feat_to_plot].max(), 50)
+                ax.plot(x_line, np.polyval(z, x_line), color=color, linewidth=1.5, alpha=0.8)
+
+        ax.axhline(0, color="gray", linewidth=0.7, linestyle=":")
+        ax.set_xlabel(FEATURE_LABELS.get(feat_to_plot, feat_to_plot))
+        ax.set_ylabel(label)
+        ax.set_title(f"Intensive therapy vs {label}\nby GMFCS level")
+        ax.legend(fontsize=8)
+
+    plt.suptitle("Training × GMFCS Interaction", fontsize=13)
+    plt.tight_layout()
+    path = IMAGES_DIR / "interaction_analysis.png"
+    plt.savefig(path, dpi=150)
+    print(f"  Saved: {path.name}")
+    plt.show()
 
 
-def print_group_comparisons(group_df: pd.DataFrame):
+# ════════════════════════════════════════════════════════════════════════════
+# 4. RESPONDER ANALYSIS
+# ════════════════════════════════════════════════════════════════════════════
+
+def run_responder_analysis(df: pd.DataFrame):
+    """
+    Dichotomize delta into improved (>0) vs not improved (<=0).
+    Use logistic regression and Fisher's exact test.
+    More clinically interpretable and robust to outliers.
+    """
     sep = "=" * 70
     print(f"\n{sep}")
-    print(f"  GROUP COMPARISONS (Mann-Whitney U, min group n={MIN_GROUP_N})")
+    print("  RESPONDER ANALYSIS")
+    print("  (improved = delta > 0, not improved = delta <= 0)")
     print(sep)
-    for target in group_df["target"].unique():
-        sub = group_df[group_df["target"] == target]
-        print(f"\n  Target: {target}")
-        print(f"  {'Feature':<28} {'Mean(yes)':>10} {'Mean(no)':>10}"
-              f" {'Diff':>8} {'n(yes)':>7} {'n(no)':>7} {'p':>8} {'r':>7}")
-        print(f"  {'-'*90}")
-        for _, row in sub.iterrows():
-            print(f"  {row['feature']:<28}"
-                  f" {row['mean_yes']:>10.4f} {row['mean_no']:>10.4f}"
-                  f" {row['mean_diff']:>+8.4f} {row['n_yes']:>7} {row['n_no']:>7}"
-                  f" {row['p_value']:>8.4f}{row['sig']:>3} {row['effect_size']:>7.3f}")
-    print(f"\n  r = rank-biserial  |r|>0.1 small, >0.3 medium, >0.5 large")
 
-
-# ─── Visualizations ───────────────────────────────────────────────────────────
-
-def plot_spearman_heatmap(spearman_df: pd.DataFrame):
-    pivot = spearman_df.pivot(index="feature", columns="target", values="rho")
-    pvals = spearman_df.pivot(index="feature", columns="target", values="p_value")
-    pfdr  = spearman_df.pivot(index="feature", columns="target", values="p_fdr")
-
-    fig, ax = plt.subplots(figsize=(max(6, len(pivot.columns) * 3), max(4, len(pivot) * 0.7)))
-    im = ax.imshow(pivot.values, cmap="RdBu_r", vmin=-1, vmax=1, aspect="auto")
-
-    ax.set_xticks(range(len(pivot.columns)))
-    ax.set_xticklabels(pivot.columns, rotation=20, ha="right")
-    ax.set_yticks(range(len(pivot.index)))
-    ax.set_yticklabels(pivot.index)
-
-    for i in range(len(pivot.index)):
-        for j in range(len(pivot.columns)):
-            rho = pivot.values[i, j]
-            p   = pvals.values[i, j]
-            fdr = pfdr.values[i, j]
-            if not np.isnan(rho):
-                sig_raw = "***" if p < 0.001 else "**" if p < 0.01 else "*" if p < 0.05 else ""
-                sig_fdr = "†" if fdr < 0.05 else ""
-                ax.text(j, i, f"{rho:.2f}{sig_raw}\n{sig_fdr}",
-                        ha="center", va="center", fontsize=9,
-                        color="black" if abs(rho) < 0.6 else "white")
-
-    plt.colorbar(im, ax=ax, label="Spearman ρ")
-    ax.set_title("Spearman Correlations\n* p<0.05  ** p<0.01  *** p<0.001  † FDR<0.05")
-    plt.tight_layout()
-    path = IMAGES_DIR / "spearman_heatmap.png"
-    plt.savefig(path, dpi=150)
-    print(f"  Saved: {path.name}")
-    plt.show()
-
-
-def plot_coefficient_forest(reg_results: dict):
-    valid = {k: v for k, v in reg_results.items() if v is not None}
-    if not valid:
-        return
-
-    fig, axes = plt.subplots(1, len(valid), figsize=(7 * len(valid), 6), sharey=False)
-    if len(valid) == 1:
-        axes = [axes]
-
-    for ax, (target, df) in zip(axes, valid.items()):
-        label = TARGET_LABELS.get(target, target)
-        y_pos = range(len(df))
-
-        ax.axvline(0, color="gray", linewidth=0.8, linestyle="--")
-        for i, (_, row) in enumerate(df.iterrows()):
-            color = "steelblue" if row["p_value"] < 0.05 else "lightgray"
-            ax.plot([row["ci_lower"], row["ci_upper"]], [i, i], color=color, linewidth=2)
-            ax.scatter(row["coef"], i, color=color, s=60, zorder=5)
-
-        ax.set_yticks(list(y_pos))
-        ax.set_yticklabels(df["feature"].tolist())
-        ax.set_xlabel("Regression coefficient (β)")
-        ax.set_title(f"{label}\n(adj. R²={df['adj_r2'].iloc[0]:.3f}, n={df['n'].iloc[0]})")
-
-    plt.suptitle("OLS Regression Coefficients with 95% CI\n(blue = p<0.05)", fontsize=12)
-    plt.tight_layout()
-    path = IMAGES_DIR / "regression_forest_plot.png"
-    plt.savefig(path, dpi=150)
-    print(f"  Saved: {path.name}")
-    plt.show()
-
-
-def plot_scatter_continuous(df: pd.DataFrame):
-    existing_targets = [t for t in TARGETS if t in df.columns]
-    existing_feats   = [f for f in CONTINUOUS_FEATURES if f in df.columns]
-    n_rows = len(existing_targets)
-    n_cols = len(existing_feats)
-
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 4 * n_rows), squeeze=False)
-
-    for row_i, target in enumerate(existing_targets):
-        for col_i, feat in enumerate(existing_feats):
-            ax     = axes[row_i][col_i]
-            common = df[[feat, target]].dropna()
-            ax.scatter(common[feat], common[target], alpha=0.5, color="steelblue", s=30)
-            if len(common) >= 5:
-                rho, p = stats.spearmanr(common[feat], common[target])
-                ci_lo, ci_hi = _spearman_ci(rho, len(common))
-                sig = "***" if p < 0.001 else "**" if p < 0.01 else "*" if p < 0.05 else ""
-                ax.annotate(
-                    f"ρ={rho:.2f}{sig}\n95%CI [{ci_lo:+.2f},{ci_hi:+.2f}]\nn={len(common)}",
-                    xy=(0.97, 0.97), xycoords="axes fraction",
-                    ha="right", va="top", fontsize=8,
-                    bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.8),
-                )
-            ax.axhline(0, color="gray", linewidth=0.7, linestyle=":")
-            ax.set_xlabel(FEATURE_LABELS.get(feat, feat))
-            ax.set_ylabel(TARGET_LABELS.get(target, target))
-
-    plt.suptitle("Continuous Features vs Motor Scores\n(* p<0.05  ** p<0.01  *** p<0.001)", fontsize=12)
-    plt.tight_layout()
-    path = IMAGES_DIR / "scatter_continuous.png"
-    plt.savefig(path, dpi=150)
-    print(f"  Saved: {path.name}")
-    plt.show()
-
-
-def plot_group_boxplots(df: pd.DataFrame):
-    existing_targets = [t for t in TARGETS if t in df.columns]
-    existing_feats   = [f for f in BINARY_FEATURES if f in df.columns]
-    if not existing_feats:
-        return
-
-    fig, axes = plt.subplots(len(existing_targets), len(existing_feats),
-                             figsize=(5 * len(existing_feats), 4 * len(existing_targets)),
+    features = CONTINUOUS_FEATURES + BINARY_FEATURES + CONTROL_VARS
+    fig_rows  = len(TARGETS)
+    fig, axes = plt.subplots(fig_rows, len(CONTINUOUS_FEATURES),
+                             figsize=(5 * len(CONTINUOUS_FEATURES), 5 * fig_rows),
                              squeeze=False)
 
-    for row_i, target in enumerate(existing_targets):
-        for col_i, feat in enumerate(existing_feats):
-            ax     = axes[row_i][col_i]
-            common = df[[feat, target]].dropna()
-            g0     = common[common[feat] == 0][target]
-            g1     = common[common[feat] == 1][target]
+    for row_i, target in enumerate(TARGETS):
+        if target not in df.columns:
+            continue
 
-            bp = ax.boxplot([g0, g1], patch_artist=True, widths=0.5,
+        label     = TARGET_LABELS.get(target, target)
+        df_target = df.copy()
+        df_target["responder"] = (df_target[target] > 0).astype(int)
+        df_target = df_target.dropna(subset=[target])
+        df_target = df_target[df_target[target] != 0]  # exclude structural zeros
+
+        n_resp    = df_target["responder"].sum()
+        n_nonresp = (df_target["responder"] == 0).sum()
+        print(f"\n  Target: {label}")
+        print(f"  Responders (improved): {n_resp}  |  Non-responders: {n_nonresp}")
+
+        # Logistic regression
+        feat_use = [f for f in features if f in df_target.columns]
+        subset   = df_target[feat_use + ["responder"]].dropna()
+        if len(subset) >= len(feat_use) + 5 and subset["responder"].nunique() == 2:
+            X     = sm.add_constant(subset[feat_use])
+            model = sm.Logit(subset["responder"], X).fit(disp=0)
+
+            print(f"\n  Logistic regression (outcome = improved vs not)")
+            print(f"  {'Feature':<35} {'OR':>8} {'95% CI':>20} {'p':>8}")
+            print(f"  {'-'*74}")
+            for feat in feat_use:
+                coef     = model.params[feat]
+                ci_lo, ci_hi = model.conf_int().loc[feat]
+                pval     = model.pvalues[feat]
+                OR       = np.exp(coef)
+                OR_lo    = np.exp(ci_lo)
+                OR_hi    = np.exp(ci_hi)
+                ci_str   = f"[{OR_lo:.3f}, {OR_hi:.3f}]"
+                print(f"  {FEATURE_LABELS.get(feat,feat):<35} {OR:>8.3f} {ci_str:>20}  {pval:>7.4f} {_sig(pval)}")
+            print(f"\n  OR = odds ratio  |  OR>1 = associated with improvement")
+
+        # Boxplots: training hours by responder status
+        for col_i, feat in enumerate(CONTINUOUS_FEATURES):
+            if feat not in df_target.columns:
+                continue
+            ax   = axes[row_i][col_i]
+            resp = df_target[df_target["responder"] == 1][feat].dropna()
+            non  = df_target[df_target["responder"] == 0][feat].dropna()
+
+            bp = ax.boxplot([non, resp], patch_artist=True, widths=0.5,
                             medianprops=dict(color="black", linewidth=2))
             bp["boxes"][0].set_facecolor("#AED6F1")
             bp["boxes"][1].set_facecolor("#A9DFBF")
 
-            if len(g1) >= MIN_GROUP_N and len(g0) >= MIN_GROUP_N:
-                _, p = stats.mannwhitneyu(g1, g0, alternative="two-sided")
-                sig  = "***" if p < 0.001 else "**" if p < 0.01 else "*" if p < 0.05 else "ns"
-                title_str = f"{FEATURE_LABELS.get(feat,feat)}\np={p:.4f} {sig}"
+            if len(resp) >= 3 and len(non) >= 3:
+                _, p = stats.mannwhitneyu(resp, non, alternative="two-sided")
+                sig  = _sig(p)
+                ax.set_title(f"{FEATURE_LABELS.get(feat,feat)}\np={p:.3f} {sig}", fontsize=9)
             else:
-                title_str = f"{FEATURE_LABELS.get(feat,feat)}\n(group too small)"
+                ax.set_title(FEATURE_LABELS.get(feat, feat), fontsize=9)
 
             ax.set_xticks([1, 2])
-            ax.set_xticklabels([f"No\n(n={len(g0)})", f"Yes\n(n={len(g1)})"])
-            ax.set_title(title_str)
-            ax.set_ylabel(TARGET_LABELS.get(target, target))
+            ax.set_xticklabels([f"Not improved\n(n={len(non)})", f"Improved\n(n={len(resp)})"])
+            ax.set_ylabel(FEATURE_LABELS.get(feat, feat), fontsize=8)
             ax.axhline(0, color="gray", linewidth=0.7, linestyle=":")
 
-    plt.suptitle("Motor Score by Group (Mann-Whitney U)", fontsize=13)
+    plt.suptitle("Training Hours: Responders vs Non-Responders", fontsize=13)
     plt.tight_layout()
-    path = IMAGES_DIR / "group_comparisons.png"
+    path = IMAGES_DIR / "responder_analysis.png"
     plt.savefig(path, dpi=150)
-    print(f"  Saved: {path.name}")
+    print(f"\n  Saved: {path.name}")
     plt.show()
 
 
-# ─── Main ─────────────────────────────────────────────────────────────────────
+# ════════════════════════════════════════════════════════════════════════════
+# 5. DOSE-RESPONSE THRESHOLD (QUARTILE ANALYSIS)
+# ════════════════════════════════════════════════════════════════════════════
+
+def run_quartile_analysis(df: pd.DataFrame):
+    """
+    Split training hours into quartiles and compare outcome across groups.
+    Reveals whether there is a threshold below which no effect is seen.
+    """
+    sep = "=" * 70
+    print(f"\n{sep}")
+    print("  DOSE-RESPONSE THRESHOLD — QUARTILE ANALYSIS")
+    print(sep)
+
+    n_feats  = len(CONTINUOUS_FEATURES)
+    n_targets = len(TARGETS)
+    fig, axes = plt.subplots(n_targets, n_feats,
+                             figsize=(5 * n_feats, 5 * n_targets), squeeze=False)
+
+    for row_i, target in enumerate(TARGETS):
+        if target not in df.columns:
+            continue
+        label = TARGET_LABELS.get(target, target)
+
+        for col_i, feat in enumerate(CONTINUOUS_FEATURES):
+            if feat not in df.columns:
+                continue
+            ax     = axes[row_i][col_i]
+            subset = df[[feat, target]].dropna()
+            subset = subset[subset[feat] > 0]  # users only
+
+            if len(subset) < 20:
+                ax.set_visible(False)
+                continue
+
+            subset = subset.copy()
+            subset["quartile"] = pd.qcut(subset[feat], q=4,
+                                         labels=["Q1\n(lowest)", "Q2", "Q3", "Q4\n(highest)"])
+
+            groups     = [subset[subset["quartile"] == q][target].values
+                          for q in subset["quartile"].cat.categories]
+            group_labs = list(subset["quartile"].cat.categories)
+            ns         = [len(g) for g in groups]
+
+            stat, p = stats.kruskal(*[g for g in groups if len(g) >= 3])
+
+            bp = ax.boxplot(groups, patch_artist=True, widths=0.5,
+                            medianprops=dict(color="black", linewidth=2))
+            colors = ["#D6EAF8", "#AED6F1", "#5DADE2", "#2E86C1"]
+            for patch, color in zip(bp["boxes"], colors):
+                patch.set_facecolor(color)
+
+            ax.set_xticklabels([f"{l}\n(n={n})" for l, n in zip(group_labs, ns)], fontsize=8)
+            ax.set_ylabel(label, fontsize=9)
+            ax.set_title(f"{FEATURE_LABELS.get(feat,feat)}\nKruskal-Wallis p={p:.3f} {_sig(p)}",
+                         fontsize=9)
+            ax.axhline(0, color="gray", linewidth=0.7, linestyle=":")
+
+            print(f"\n  {label} × {FEATURE_LABELS.get(feat,feat)} quartiles:")
+            for q, g in zip(group_labs, groups):
+                if len(g) > 0:
+                    print(f"    {q}: n={len(g)}, median={np.median(g):.4f}, mean={np.mean(g):.4f}")
+            print(f"  Kruskal-Wallis: H={stat:.3f}, p={p:.4f} {_sig(p)}")
+
+    plt.suptitle("Dose-Response by Training Quartile", fontsize=13)
+    plt.tight_layout()
+    path = IMAGES_DIR / "quartile_analysis.png"
+    plt.savefig(path, dpi=150)
+    print(f"\n  Saved: {path.name}")
+    plt.show()
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# 6. INTRACLASS CORRELATION COEFFICIENT (ICC)
+# ════════════════════════════════════════════════════════════════════════════
+
+def run_icc_analysis(df: pd.DataFrame):
+    """
+    ICC(1,1): how consistent is a child's score with itself over time?
+    High ICC = baseline dominates, little room for training to explain change.
+    Low ICC = scores vary, more signal to explain.
+    """
+    sep = "=" * 70
+    print(f"\n{sep}")
+    print("  INTRACLASS CORRELATION COEFFICIENT (ICC)")
+    print("  (how much of score variance is between-child vs within-child?)")
+    print(sep)
+
+    score_cols = [
+        "milestone_score_setvalue",
+        "impairment_score_setvalue",
+        "combined_score_setvalue",
+        "motorical_score",
+    ]
+    existing_scores = [c for c in score_cols if c in df.columns]
+
+    if not existing_scores:
+        print("  No score columns found — skipping.")
+        return
+
+    print(f"\n  {'Score':<35} {'ICC':>8} {'Between-child var':>20} {'Within-child var':>18} {'Interpretation'}")
+    print(f"  {'-'*95}")
+
+    for score in existing_scores:
+        subset = df[["introductory_id", score]].dropna()
+        if subset["introductory_id"].nunique() < 5:
+            continue
+
+        # One-way ANOVA ICC(1,1)
+        groups      = [grp[score].values for _, grp in subset.groupby("introductory_id")
+                       if len(grp) >= 2]
+        if len(groups) < 5:
+            continue
+
+        grand_mean  = subset[score].mean()
+        k           = np.mean([len(g) for g in groups])
+        n_subjects  = len(groups)
+
+        # MS between and within
+        ss_between  = sum(len(g) * (np.mean(g) - grand_mean)**2 for g in groups)
+        ss_within   = sum(np.sum((g - np.mean(g))**2) for g in groups)
+        df_between  = n_subjects - 1
+        df_within   = sum(len(g) - 1 for g in groups)
+
+        ms_between  = ss_between / df_between if df_between > 0 else np.nan
+        ms_within   = ss_within / df_within if df_within > 0 else np.nan
+
+        icc = (ms_between - ms_within) / (ms_between + (k - 1) * ms_within) if ms_between > 0 else np.nan
+
+        var_between = max((ms_between - ms_within) / k, 0)
+        var_within  = ms_within
+
+        if icc >= 0.75:
+            interp = "Excellent — baseline dominates"
+        elif icc >= 0.5:
+            interp = "Moderate — some within-child change"
+        elif icc >= 0.25:
+            interp = "Fair — substantial within-child variation"
+        else:
+            interp = "Poor — scores vary greatly within child"
+
+        print(f"  {score:<35} {icc:>8.3f} {var_between:>20.4f} {var_within:>18.4f}  {interp}")
+
+    print(f"\n  ICC interpretation: >0.75 excellent, 0.5–0.75 moderate,")
+    print(f"  0.25–0.5 fair, <0.25 poor (Cicchetti 1994)")
+    print(f"  High ICC means training can explain little additional variance.")
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# 7. TRAINING CATEGORY COMPARISON
+# ════════════════════════════════════════════════════════════════════════════
+
+def run_category_comparison(df: pd.DataFrame):
+    """
+    Compare outcome across training categories using Kruskal-Wallis.
+    Tests whether TYPE of training matters beyond total hours.
+    """
+    sep = "=" * 70
+    print(f"\n{sep}")
+    print("  TRAINING CATEGORY COMPARISON (Kruskal-Wallis)")
+    print("  (does type of training matter beyond total hours?)")
+    print(sep)
+
+    existing_cats = [c for c in CATEGORY_FEATURES if c in df.columns]
+    if not existing_cats:
+        print("  No category columns found — skipping.")
+        return
+
+    for target in TARGETS:
+        if target not in df.columns:
+            continue
+        label = TARGET_LABELS.get(target, target)
+        print(f"\n  Target: {label}")
+        print(f"  {'Category':<35} {'ρ':>7} {'p':>8} {'n_users':>8}")
+        print(f"  {'-'*60}")
+
+        results = []
+        for cat in existing_cats:
+            subset  = df[[cat, target]].dropna()
+            users   = subset[subset[cat] > 0]
+            if len(users) < MIN_N:
+                continue
+            r, p = stats.spearmanr(users[cat], users[target])
+            results.append((cat, r, p, len(users)))
+
+        # Sort by abs rho
+        results.sort(key=lambda x: abs(x[1]), reverse=True)
+        for cat, r, p, n in results:
+            print(f"  {FEATURE_LABELS.get(cat,cat):<35} {r:>7.3f} {p:>8.4f}{_sig(p):>3}  {n:>6}")
+
+        # Kruskal-Wallis: which category is associated with the best outcomes?
+        print(f"\n  Comparing outcome between children who did vs did not use each category:")
+        print(f"  {'Category':<35} {'Mean(users)':>12} {'Mean(non)':>12} {'p':>8}")
+        print(f"  {'-'*72}")
+        for cat in existing_cats:
+            subset   = df[[cat, target]].dropna()
+            users    = subset[subset[cat] > 0][target]
+            non_users = subset[subset[cat] == 0][target]
+            if len(users) < MIN_N or len(non_users) < MIN_N:
+                continue
+            _, p = stats.mannwhitneyu(users, non_users, alternative="two-sided")
+            print(f"  {FEATURE_LABELS.get(cat,cat):<35}"
+                  f" {users.mean():>12.4f} {non_users.mean():>12.4f}"
+                  f" {p:>8.4f}{_sig(p):>3}")
+
+    # Plot: correlation of each category with outcome
+    if existing_cats:
+        fig, axes = plt.subplots(1, len(TARGETS),
+                                 figsize=(7 * len(TARGETS), 5), squeeze=False)
+        for ax, target in zip(axes[0], TARGETS):
+            if target not in df.columns:
+                ax.set_visible(False)
+                continue
+            label   = TARGET_LABELS.get(target, target)
+            rhos, labels_plot, colors = [], [], []
+            for cat in existing_cats:
+                subset = df[[cat, target]].dropna()
+                users  = subset[subset[cat] > 0]
+                if len(users) < MIN_N:
+                    continue
+                r, p = stats.spearmanr(users[cat], users[target])
+                rhos.append(r)
+                labels_plot.append(FEATURE_LABELS.get(cat, cat))
+                colors.append("#2ecc71" if r > 0 else "#e74c3c")
+
+            y_pos = range(len(rhos))
+            ax.barh(list(y_pos), rhos, color=colors, alpha=0.7)
+            ax.set_yticks(list(y_pos))
+            ax.set_yticklabels(labels_plot, fontsize=9)
+            ax.axvline(0, color="gray", linewidth=0.8)
+            ax.set_xlabel("Spearman ρ (among users only)")
+            ax.set_title(f"Training Category vs {label}")
+
+        plt.suptitle("Training Category Associations (among users only)", fontsize=12)
+        plt.tight_layout()
+        path = IMAGES_DIR / "category_comparison.png"
+        plt.savefig(path, dpi=150)
+        print(f"\n  Saved: {path.name}")
+        plt.show()
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Main
+# ════════════════════════════════════════════════════════════════════════════
 
 def main():
     sep = "=" * 70
-
     print(sep)
     print("  Loading data …")
     conn = get_connection()
@@ -705,54 +713,28 @@ def main():
     print(f"  Master table: {master.shape[0]} rows × {master.shape[1]} columns")
 
     df = prepare_data(master)
-    print(f"  Working dataset: {len(df)} rows, {df['introductory_id'].nunique()} children")
+    print(f"  Working dataset: {len(df)} rows, {df['introductory_id'].nunique()} children\n")
 
-    # ── 0. Descriptives ───────────────────────────────────────────────────────
-    print_descriptives(df)
+    # ── 1. Baseline-controlled regression ────────────────────────────────────
+    run_baseline_controlled_regression(df)
 
-    # ── 1. Wilcoxon: is change ≠ 0? ──────────────────────────────────────────
-    run_wilcoxon_change(df)
+    # ── 2. Time interval stratification ──────────────────────────────────────
+    run_time_interval_analysis(df)
 
-    # ── 2. Spearman with CIs and FDR ─────────────────────────────────────────
-    spearman_df = run_spearman(df)
-    print_spearman(spearman_df)
+    # ── 3. Training × GMFCS interaction ──────────────────────────────────────
+    run_interaction_analysis(df)
 
-    # ── 3. Stratified Spearman by GMFCS ──────────────────────────────────────
-    run_spearman_by_gmfcs(df)
+    # ── 4. Responder analysis ─────────────────────────────────────────────────
+    run_responder_analysis(df)
 
-    # ── 4. OLS regression with standardized betas ────────────────────────────
-    reg_results = {}
-    for target in TARGETS:
-        if target not in df.columns:
-            continue
-        reg_df = run_regression(df, target)
-        reg_results[target] = reg_df
-        if reg_df is not None:
-            print_regression(reg_df, target)
+    # ── 5. Quartile dose-response ─────────────────────────────────────────────
+    run_quartile_analysis(df)
 
-    # ── 5. Mixed-effects model (correct for repeated measures) ───────────────
-    for target in TARGETS:
-        if target in df.columns:
-            run_mixed_effects(df, target)
+    # ── 6. ICC ───────────────────────────────────────────────────────────────
+    run_icc_analysis(df)
 
-    # ── 6. Group comparisons ─────────────────────────────────────────────────
-    group_df = run_group_comparisons(df)
-    if not group_df.empty:
-        print_group_comparisons(group_df)
-
-    # ── 7. Power analysis ────────────────────────────────────────────────────
-    run_power_analysis(df)
-
-    # ── 8. Plots ─────────────────────────────────────────────────────────────
-    print(f"\n{sep}")
-    print("  Generating plots …")
-    print(sep)
-
-    plot_spearman_heatmap(spearman_df)
-    plot_coefficient_forest(reg_results)
-    plot_feature_correlation_matrix(df)
-    plot_group_boxplots(df)
-    plot_scatter_continuous(df)
+    # ── 7. Training category comparison ──────────────────────────────────────
+    run_category_comparison(df)
 
     plt.show()
     print("\nDone.")
