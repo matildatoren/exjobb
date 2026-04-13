@@ -123,6 +123,7 @@ def build_analysis_df(
         .to_pandas()
         .rename(columns={delta_col: "delta_score"})
     )
+
     return df
 
 
@@ -417,9 +418,9 @@ def plot_overall_dose_response(
 # ════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
-    from dataloader import load_data
-    from connect_db import get_connection
-    from preprocessing.master_preprocessing import build_master_feature_table
+    from src.dataloader import load_data
+    from src.connect_db import get_connection
+    from src.preprocessing.master_preprocessing import build_master_feature_table
 
     conn = get_connection()
     data = load_data(conn)
