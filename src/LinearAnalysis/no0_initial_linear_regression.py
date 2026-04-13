@@ -12,6 +12,8 @@ from sklearn.metrics import r2_score
 BASE_DIR   = Path(__file__).resolve().parent.parent
 IMAGES_DIR = BASE_DIR / "images"
 
+IMAGES_DIR = Path(__file__).resolve().parent / "images"
+IMAGES_DIR.mkdir(exist_ok=True)
 
 # ════════════════════════════════════════════════════════════════════════════
 # CONFIG — ändra här
@@ -70,7 +72,7 @@ CONFIG = {
     #     ("log_cat_suit_based",         "Suit based therapies"),
     #     ("log_cat_physical_conditioning",         "Physical conditioning and activity based therapies"),
     #     ("log_cat_complementary",         "Complementary therapies"),
-    # ],
+      ],
 
     # Input — kolumn som används i overall dose-response-plotten
     # Bör vara en av kolumnerna ovan

@@ -13,3 +13,4 @@ wheels/
 .env
 images/*.png
 src/images/*.png
+src/LinearAnalysis/images/*.png
