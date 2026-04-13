@@ -12,30 +12,32 @@ from sklearn.metrics import r2_score
 BASE_DIR   = Path(__file__).resolve().parent.parent
 IMAGES_DIR = BASE_DIR / "images"
 
+IMAGES_DIR = Path(__file__).resolve().parent / "images"
+IMAGES_DIR.mkdir(exist_ok=True)
 
 # ════════════════════════════════════════════════════════════════════════════
 # CONFIG — ändra här
 # ════════════════════════════════════════════════════════════════════════════
 
 CONFIG = {
-    # "filter_ids": [
-    #     "771d12c3-bc1a-4a97-ad27-00d35b24f87e",
-    #     "1d0afd8d-6945-488a-964c-724e95db6696",
-    #     "1019fb0a-480d-4bef-b8f9-493b9dfe253b",
-    #     "6e7aeec2-2846-433d-a4ac-0e753da08530",
-    #     "e30d335e-3a7a-484d-951d-f8e3f17ccfb3",
-    #     "578adb11-a12f-4121-a567-afe67c25640b",
-    #     "0a584ba1-cdf4-4251-9168-5f8ccc0240e3",
-    #     "7e42b31a-c597-4418-9bf6-a8c3286d049f",
-    #     "f9231c8d-2ade-4c0e-a878-a9524ccc3d65",
-    #     "df67e7ea-0b50-408b-9342-4c29d0efa839",
-    #     "16f3f961-07a2-4099-8498-1bad9c2faa19",
-    #     "44cd783c-b33d-4553-89cd-2a73b59e1982",
-    #     "cd26a009-6e51-4372-b151-b7d2bb8b7183",
-    #     "c0990a55-916e-47ba-b29a-aee83d9f33c9",
-    #     "89e4bf27-9a6f-45e8-a415-ef53f23f7931",
-    #     "65ab3206-7371-4471-845c-6d238050494f",
-    # ],
+    "filter_ids": [
+        "771d12c3-bc1a-4a97-ad27-00d35b24f87e",
+        "1d0afd8d-6945-488a-964c-724e95db6696",
+        "1019fb0a-480d-4bef-b8f9-493b9dfe253b",
+        "6e7aeec2-2846-433d-a4ac-0e753da08530",
+        "e30d335e-3a7a-484d-951d-f8e3f17ccfb3",
+        "578adb11-a12f-4121-a567-afe67c25640b",
+        "0a584ba1-cdf4-4251-9168-5f8ccc0240e3",
+        "7e42b31a-c597-4418-9bf6-a8c3286d049f",
+        "f9231c8d-2ade-4c0e-a878-a9524ccc3d65",
+        "df67e7ea-0b50-408b-9342-4c29d0efa839",
+        "16f3f961-07a2-4099-8498-1bad9c2faa19",
+        "44cd783c-b33d-4553-89cd-2a73b59e1982",
+        "cd26a009-6e51-4372-b151-b7d2bb8b7183",
+        "c0990a55-916e-47ba-b29a-aee83d9f33c9",
+        "89e4bf27-9a6f-45e8-a415-ef53f23f7931",
+        "65ab3206-7371-4471-845c-6d238050494f",
+    ],
 
     # Output — vilket/vilka motorscores att analysera
     "scores": {
@@ -64,13 +66,13 @@ CONFIG = {
         ("log_total_other_training_hours", "Sports / other"),
         ("log_neurohab_hours",             "Intensive therapy"),
         ("log_active_total_hours",         "Combined active total"),
-        # ("log_cat_neurodevelopmental_reflex",         "Neurodevelopmental and Reflex based therapies"),
-        # ("log_cat_motor_learning_task",         "Motor learning and task oriented learning"),
-        # ("log_cat_technology_assisted",         "Technology assisted therapies"),
-        # ("log_cat_suit_based",         "Suit based therapies"),
-        # ("log_cat_physical_conditioning",         "Physical conditioning and activity based therapies"),
-        # ("log_cat_complementary",         "Complementary therapies"),
-    ],
+    #     ("log_cat_neurodevelopmental_reflex",         "Neurodevelopmental and Reflex based therapies"),
+    #     ("log_cat_motor_learning_task",         "Motor learning and task oriented learning"),
+    #     ("log_cat_technology_assisted",         "Technology assisted therapies"),
+    #     ("log_cat_suit_based",         "Suit based therapies"),
+    #     ("log_cat_physical_conditioning",         "Physical conditioning and activity based therapies"),
+    #     ("log_cat_complementary",         "Complementary therapies"),
+      ],
 
     # Input — kolumn som används i overall dose-response-plotten
     # Bör vara en av kolumnerna ovan
@@ -100,6 +102,9 @@ def build_analysis_df(
 
     Returns a pandas DataFrame with:
       delta_score, hour components, active_total_hours, med_* columns.
+
+    Rows where no training was reported (all hour components == 0) are dropped,
+    as these almost certainly represent missing data rather than true zero training.
     """
     overall = CONFIG["overall_feature"]
 
@@ -123,11 +128,24 @@ def build_analysis_df(
         .to_pandas()
         .rename(columns={delta_col: "delta_score"})
     )
+
+    # ── Drop rows where no training was reported ─────────────────────────────
+    hour_cols = [col for col, _ in CONFIG["hour_components"] if col in df.columns]
+    has_training = df[hour_cols].sum(axis=1) > 0
+    n_dropped = (~has_training).sum()
+    print(f"  [build_analysis_df] Dropping {n_dropped} rows with no training reported")
+    df = df[has_training].reset_index(drop=True)
+
+    # ── Drop rows where delta score is zero (likely missing second assessment) ─
+    n_zero = (df["delta_score"] == 0).sum()
+    print(f"  [build_analysis_df] Dropping {n_zero} rows with delta_score == 0")
+    df = df[df["delta_score"] != 0].reset_index(drop=True)
+    # ─────────────────────────────────────────────────────────────────────────
     return df
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Regression helpers  (unchanged from original)
+# Regression helpers
 # ════════════════════════════════════════════════════════════════════════════
 
 def _fit_linear(X: pd.DataFrame, y: pd.Series):
@@ -177,12 +195,14 @@ def run_analysis(master: pl.DataFrame, delta_col: str) -> dict:
     treatment_cols = _get_treatment_cols(active_df)
 
     # ── Component regressions ────────────────────────────────────────────────
+    # Only include participants who actually used each component (> 0),
+    # so the regression reflects dose-response among users only.
     component_results = []
     for col, label in CONFIG["hour_components"]:
         if col not in active_df.columns:
             continue
         subset = active_df[["delta_score", col]].dropna()
-        subset = subset[subset[col] >= 0]
+        subset = subset[subset[col] > 0]  # users only — excludes non-participants
         if len(subset) < 5 or subset[col].sum() == 0:
             continue
         model, r2 = _fit_linear(subset[[col]], subset["delta_score"])
@@ -242,7 +262,7 @@ def print_summary(results: dict, title: str = "Motor Score"):
     print(f"  DOSE-RESPONSE ANALYSIS — {title.upper()}")
     print(sep)
 
-    print("\n  Active Hours Components (devices excluded)\n")
+    print("\n  Active Hours Components (users only, devices excluded)\n")
     print(f"  {'Component':<26} {'Coeff':>8} {'R²':>7} {'N':>6} {'Mean hrs':>10}")
     print(f"  {line}")
     for r in results["component_results"]:
@@ -274,7 +294,7 @@ def print_summary(results: dict, title: str = "Motor Score"):
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Figures  (logic unchanged, column names updated)
+# Figures
 # ════════════════════════════════════════════════════════════════════════════
 
 def plot_training_components(
@@ -297,7 +317,7 @@ def plot_training_components(
         col = r["col"]
 
         subset = active_df[["delta_score", col]].dropna()
-        subset = subset[subset[col] >= 0]
+        subset = subset[subset[col] > 0]  # users only — matches run_analysis
 
         ax.scatter(subset[col], subset["delta_score"], alpha=0.4, color="steelblue", s=30)
 
@@ -308,17 +328,17 @@ def plot_training_components(
             ax.plot(x_range, model.predict(x_range_df), color="orange", linewidth=2)
 
         ax.axhline(0, color="gray", linewidth=0.8, linestyle=":")
-        ax.set_xlabel("Training dose (hours / year)")
+        ax.set_xlabel("Training dose (hours / year, users only)")
         ax.set_ylabel(f"Δ {title}")
         ax.set_title(r["label"])
         ax.annotate(
-            f"R² = {r['r2']:.3f}\nn = {r['n']}",
+            f"R² = {r['r2']:.3f}\nn = {r['n']} (users only)",
             xy=(0.97, 0.97), xycoords="axes fraction",
             ha="right", va="top", fontsize=9,
             bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.7),
         )
 
-    for j in range(len(panels), 4):
+    for j in range(len(panels), len(axes)):
         axes[j].set_visible(False)
 
     plt.suptitle(f"Dose-Response by Training Component — {title}", fontsize=13)
@@ -417,9 +437,9 @@ def plot_overall_dose_response(
 # ════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
-    from dataloader import load_data
-    from connect_db import get_connection
-    from preprocessing.master_preprocessing import build_master_feature_table
+    from src.dataloader import load_data
+    from src.connect_db import get_connection
+    from src.preprocessing.master_preprocessing import build_master_feature_table
 
     conn = get_connection()
     data = load_data(conn)

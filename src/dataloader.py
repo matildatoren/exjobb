@@ -1,6 +1,6 @@
 import polars as pl
 from typing import Optional
-from connect_db import get_connection
+from src.connect_db import get_connection
 
 class SurveyDatabase:
 
