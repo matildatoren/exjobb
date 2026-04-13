@@ -1,4 +1,4 @@
-from preprocessing.preprocessing_md import extract_milestone_keys, count_milestones, sum_impairments
+from src.preprocessing.preprocessing_md import extract_milestone_keys, count_milestones, sum_impairments
 
 import polars as pl
 
@@ -8,30 +8,92 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 # ------------------------------------------------------------------
-# normalierat över en satt vektor med "unlocked" milestones/impairments
+# Lookup tables
 # ------------------------------------------------------------------
 
-def motorscore_milestones_setvalue(df: pl.DataFrame) -> pl.DataFrame:
-    """
-    MotorScore = (kumulativt antal unika milestones hittills) / (möjliga milestones vid den åldern)
-    Returnerar 0..1 per (introductory_id, age).
-    """
-    possible_milestones_by_age = {1: 12, 2: 19, 3: 25, 4: 31, 5: 36, 6: 39, 7: 41, 8:41, 9:41}
+POSSIBLE_MILESTONES_BY_AGE_GMFCS: dict[int, dict[int, int]] = {
+    # ┌─────────────────────────────────────────────────────────────────────────┐
+    # │ Gross motor (21 total)                                                  │
+    # │  Pre-walking   1–6 : rolls, sits, crawls, stands w support, cruises     │
+    # │  Basic walking 7–11: first steps, stairs on hands/knees, squats, runs   │
+    # │  Advanced     12–21: balance, tricycle, hops, skips, bike, rope, sports │
+    # │                                                                         │
+    # │ Fine motor (20 total)                                                   │
+    # │  Bucket 1  1–5 : grasps, transfers, pincer, self-feeds                 │
+    # │  Bucket 2  6–8 : turns pages, stacks blocks, scribbles                 │
+    # │  Bucket 3  9–14: copies lines/shapes, scissors, draws, pencil grasp    │
+    # │  Bucket 4 15–20: laces, writes words, threading needle, craftwork      │
+    # │                                                                         │
+    # │ GMFCS IV/V: gross motor 7–21 BLOCKED (cannot walk)                     │
+    # │ GMFCS III : gross motor 11–21 BLOCKED (no running/jumping/hopping)     │
+    # │ GMFCS II  : gross motor 17–21 reduced (hops, skips, 2-wheel bike hard) │
+    # └─────────────────────────────────────────────────────────────────────────┘
+    #        I    II   III   IV    V
+    1: {1: 12, 2: 11, 3:  9, 4:  7, 5:  4},  # pre-walking: small gap between levels
+    2: {1: 19, 2: 17, 3: 13, 4:  9, 5:  5},  # IV/V gain only fine motor; III walks but can't run
+    3: {1: 27, 2: 23, 3: 16, 4: 11, 5:  6},  # III plateaus (no running/jumping); IV/V fine motor only
+    4: {1: 35, 2: 29, 3: 18, 4: 12, 5:  7},  # I/II gain advanced milestones; IV/V max ~3 gross + 9 fine
+}
 
-    # --- Steg 1: Extrahera milestone-nycklar per rad ---
-    gross_list = df["gross_motor_development"].to_list()
-    fine_list = df["fine_motor_development"].to_list()
-
+N_NAMED_BY_AGE_GMFCS: dict[int, dict[int, int]] = {
+    # ┌─────────────────────────────────────────────────────────────────────────┐
+    # │ Lower-body gait impairments (7 named):                                  │
+    # │  In-toeing, out-toeing, crouch, scissoring, toe-walking,               │
+    # │  jump gait, dropping foot                                               │
+    # │  → GMFCS I/II : all 7 applicable                                        │
+    # │  → GMFCS III  : ~5 applicable (gait visible when walking with device)   │
+    # │  → GMFCS IV/V : 0 applicable — non-walkers, gait patterns absent        │
+    # │                                                                         │
+    # │ Upper-body impairments (11 named):                                      │
+    # │  Grip, releasing, thumb-in-palm, stiff fingers, finger control,        │
+    # │  pinching, wrist flexion, pronation, bilateral coord, elbow ext,       │
+    # │  difficulty using both hands                                            │
+    # │  → All GMFCS applicable; GMFCS V reduced (severe involvement)          │
+    # │                                                                         │
+    # │ Year 1: child not walking yet regardless → fewer gait signs visible     │
+    # └─────────────────────────────────────────────────────────────────────────┘
+    #        I    II   III   IV    V
+    1: {1:  9, 2:  9, 3:  8, 4:  7, 5:  5},  # no walking yet; 3 gait signs + 6 upper for I/II
+    2: {1: 16, 2: 16, 3: 14, 4: 11, 5:  7},  # I/II: 6 gait + 10 upper; IV/V: 0 gait + 11/7 upper
+    3: {1: 17, 2: 17, 3: 15, 4: 11, 5:  8},  # I/II: all 7 gait + 10 upper; III: 5 gait + 10 upper
+    4: {1: 18, 2: 18, 3: 16, 4: 11, 5:  8},  # I/II: 7 gait + 11 upper = 18; IV/V: 0 gait + 11/8 upper
+}
+ 
+_GMFCS_STR_TO_INT: dict[str, int] = {
+    "Level I – Walks without limitations": 1,
+    "Level II – Walks with limitations": 2,
+    "Level III – Walks using a hand-held mobility device": 3,
+    "Level IV – Self-mobility with limitations; may use powered mobility": 4,
+    "Level V – Transported in a manual wheelchair": 5,
+}
+ 
+# ════════════════════════════════════════════════════════════════════════════
+# Shared internal helpers
+# ════════════════════════════════════════════════════════════════════════════
+ 
+def _gmfcs_lookup(introductory_df: pl.DataFrame) -> dict[str, int]:
+    """Return {introductory_id: gmfcs_int} from the introductory table."""
+    return {
+        uid: _GMFCS_STR_TO_INT.get(lvl, 0)
+        for uid, lvl in zip(
+            introductory_df["id"].to_list(),
+            introductory_df["gmfcs_lvl"].to_list(),
+        )
+    }
+ 
+ 
+def _extract_milestone_keys_per_age(df: pl.DataFrame) -> pl.DataFrame:
+    """Extract and aggregate unique milestone keys per (introductory_id, age)."""
     per_row_keys = [
         sorted(extract_milestone_keys(g) | extract_milestone_keys(f))
-        for g, f in zip(gross_list, fine_list)
+        for g, f in zip(
+            df["gross_motor_development"].to_list(),
+            df["fine_motor_development"].to_list(),
+        )
     ]
-
-    df = df.with_columns(pl.Series("milestone_keys", per_row_keys))
-
-    # --- Steg 2: Aggregera unika milestones per (user, age) ---
-    per_age = (
-        df.group_by(["introductory_id", "age"])
+    df2 = df.with_columns(pl.Series("milestone_keys", per_row_keys))
+    return (
+        df2.group_by(["introductory_id", "age"])
         .agg(
             pl.col("milestone_keys")
             .explode()
@@ -41,13 +103,14 @@ def motorscore_milestones_setvalue(df: pl.DataFrame) -> pl.DataFrame:
         )
         .sort(["introductory_id", "age"])
     )
-
-    # --- Steg 3: Kumulera unika milestones per user över tid ---
-    def _cumulate(group: pl.DataFrame) -> pl.DataFrame:
+ 
+ 
+def _cumulate_milestones(per_age: pl.DataFrame) -> pl.DataFrame:
+    """Cumulate unique milestones per user over age."""
+    def _group(group: pl.DataFrame) -> pl.DataFrame:
         group = group.sort("age")
         seen: set[str] = set()
         cum_counts: list[int] = []
-
         for keys in group["milestone_keys_age"].to_list():
             cleaned = [
                 k for k in (keys or [])
@@ -55,16 +118,35 @@ def motorscore_milestones_setvalue(df: pl.DataFrame) -> pl.DataFrame:
             ]
             seen |= set(cleaned)
             cum_counts.append(len(seen))
-
         return group.with_columns(pl.Series("cum_unique_milestones", cum_counts))
-
-    cum = per_age.group_by("introductory_id").map_groups(_cumulate)
-
-    # --- Steg 4: Normalisera mot möjliga milestones vid åldern ---
+ 
+    return per_age.group_by("introductory_id").map_groups(_group)
+ 
+ 
+# ════════════════════════════════════════════════════════════════════════════
+# Normalised over a fixed "unlocked" ceiling (set value)
+# ════════════════════════════════════════════════════════════════════════════
+ 
+def motorscore_milestones_setvalue(
+    df: pl.DataFrame,
+    introductory_df: pl.DataFrame,
+) -> pl.DataFrame:
+    """
+    milestone_score = cum_unique_milestones / possible_milestones
+ 
+    Ceiling looked up from POSSIBLE_MILESTONES_BY_AGE_GMFCS using the
+    age bucket (1–4, as stored in DB) and the child's GMFCS level.
+    Returns 0..1 per (introductory_id, age).
+    """
+    per_age = _extract_milestone_keys_per_age(df)
+    cum     = _cumulate_milestones(per_age)
+    gmfcs   = _gmfcs_lookup(introductory_df)
+ 
     possible = [
-        possible_milestones_by_age.get(int(a)) for a in cum["age"].to_list()
+        POSSIBLE_MILESTONES_BY_AGE_GMFCS[int(age)].get(gmfcs.get(uid, 0))
+        for uid, age in zip(cum["introductory_id"].to_list(), cum["age"].to_list())
     ]
-
+ 
     return (
         cum.with_columns(pl.Series("possible_milestones", possible))
         .with_columns(
@@ -75,60 +157,53 @@ def motorscore_milestones_setvalue(df: pl.DataFrame) -> pl.DataFrame:
         .select(["introductory_id", "age", "cum_unique_milestones", "milestone_score"])
         .sort(["introductory_id", "age"])
     )
-
-
+ 
+ 
 def motorscore_impairments_setvalue(
     df: pl.DataFrame,
+    introductory_df: pl.DataFrame,
     upper_col: str = "motorical_impairments_upper",
     lower_col: str = "motorical_impairments_lower",
 ) -> pl.DataFrame:
-
-    def _n_named(age: float) -> int:
-        if age < 1:   return 9
-        elif age < 2: return 16
-        elif age < 3: return 17
-        else:         return 18
-
-    upper_list = df[upper_col].to_list()
-    lower_list = df[lower_col].to_list()
-
-    row_sum_ratings: list[float] = []
-    for u, lo in zip(upper_list, lower_list):
-        row_sum_ratings.append(
-            sum_impairments(u) + sum_impairments(lo)
-        )
-
-    df2 = df.with_columns(
-        pl.Series("_sum_ratings", row_sum_ratings)
-    )
-
+    """
+    mms_normalized = (max_score - sum_ratings) / max_score
+ 
+    n_named looked up from N_NAMED_BY_AGE_GMFCS using the age bucket
+    (1–4, as stored in DB) and the child's GMFCS level.
+    Returns 0..1 per (introductory_id, age).
+    """
+    row_sum_ratings = [
+        sum_impairments(u) + sum_impairments(lo)
+        for u, lo in zip(df[upper_col].to_list(), df[lower_col].to_list())
+    ]
+ 
     per_age = (
-        df2.group_by(["introductory_id", "age"])
-        .agg(
-            pl.col("_sum_ratings").sum().alias("sum_ratings")
-        )
+        df.with_columns(pl.Series("_sum_ratings", row_sum_ratings))
+        .group_by(["introductory_id", "age"])
+        .agg(pl.col("_sum_ratings").sum().alias("sum_ratings"))
         .sort(["introductory_id", "age"])
     )
-
-    ages         = per_age["age"].to_list()
-    sum_ratings  = per_age["sum_ratings"].to_list()
-
-    n_named_list  : list[int]   = []
-    max_score_list: list[int]   = []
-    mms_list      : list[float] = []
-    mms_norm_list : list[float] = []
-
-    for age, s in zip(ages, sum_ratings):
-        n_named   = _n_named(float(age))
+ 
+    gmfcs = _gmfcs_lookup(introductory_df)
+ 
+    n_named_list, max_score_list, mms_list, mms_norm_list = [], [], [], []
+ 
+    for uid, age, s in zip(
+        per_age["introductory_id"].to_list(),
+        per_age["age"].to_list(),
+        per_age["sum_ratings"].to_list(),
+    ):
+        gmfcs_int = gmfcs.get(uid, 0)
+        n_named   = N_NAMED_BY_AGE_GMFCS[int(age)].get(gmfcs_int, 18)
         max_score = n_named * 5
         mms       = max_score - s
-        mms_norm  = mms / max_score if max_score > 0 else None
-
+        mms_norm  = (mms / max_score) if max_score > 0 else None
+ 
         n_named_list.append(n_named)
         max_score_list.append(max_score)
         mms_list.append(float(mms))
-        mms_norm_list.append(float(mms_norm))
-
+        mms_norm_list.append(float(mms_norm) if mms_norm is not None else None)
+ 
     return (
         per_age
         .with_columns([
@@ -139,8 +214,7 @@ def motorscore_impairments_setvalue(
         ])
         .select([
             "introductory_id", "age",
-            "sum_ratings", "n_named",
-            "max_score", "mms", "mms_normalized",
+            "sum_ratings", "n_named", "max_score", "mms", "mms_normalized",
         ])
         .sort(["introductory_id", "age"])
     )
@@ -503,15 +577,16 @@ if __name__ == "__main__":
     data = load_data(conn)
 
     motorical_dev = data["motorical_development"]
+    introductory = data["introductory"]
 
-    milestonevalue1 = motorscore_milestones_setvalue(motorical_dev)
+    milestonevalue1 = motorscore_milestones_setvalue(motorical_dev, introductory)
     milestonesvalue2 = motorscore_milestones(motorical_dev)
     print('First milestone score')
     print(milestonevalue1)
     print('Second milestone score')
     print(milestonesvalue2)
 
-    impairmentvalue1 = motorscore_impairments_setvalue(motorical_dev)
+    impairmentvalue1 = motorscore_impairments_setvalue(motorical_dev, introductory)
     impairmentvalue2 = motorscore_impairments(motorical_dev)
     print('First impairment score')
     print(impairmentvalue1)

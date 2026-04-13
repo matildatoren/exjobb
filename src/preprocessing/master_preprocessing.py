@@ -182,14 +182,14 @@ def _prefix_medical_cols(medical_df: pl.DataFrame) -> pl.DataFrame:
 # Motor score assembly
 # ════════════════════════════════════════════════════════════════════════════
  
-def _build_motor_table(motorical_dev: pl.DataFrame) -> pl.DataFrame:
+def _build_motor_table(motorical_dev: pl.DataFrame, introductory: pl.DataFrame) -> pl.DataFrame:
 
     # ── score 1 ─────────────────────────────────────────────────────────────
     score1 = process_motorical_score_1(motorical_dev)
 
     # ── milestone scores ────────────────────────────────────────────────────
     ms_set = (
-        motorscore_milestones_setvalue(motorical_dev)
+        motorscore_milestones_setvalue(motorical_dev, introductory)
         .select([
             "introductory_id", "age",
             pl.col("milestone_score").alias("milestone_score_setvalue"),
@@ -206,7 +206,7 @@ def _build_motor_table(motorical_dev: pl.DataFrame) -> pl.DataFrame:
  
     # ── impairment scores ───────────────────────────────────────────────────
     imp_set = (
-        motorscore_impairments_setvalue(motorical_dev)
+        motorscore_impairments_setvalue(motorical_dev, introductory)
         .select([
             "introductory_id", "age",
             pl.col("mms_normalized").alias("impairment_score_setvalue"),
@@ -327,7 +327,7 @@ def build_master_feature_table(data: dict[str, pl.DataFrame]) -> pl.DataFrame:
  
 
     # ── 7. All motor scores + delta / lag ────────────────────────────────────
-    motor_df = _build_motor_table(motorical_dev)
+    motor_df = _build_motor_table(motorical_dev, introductory)
 
     # ── 8. Join everything ───────────────────────────────────────────────────
     result = (
