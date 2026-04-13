@@ -72,15 +72,13 @@ _GMFCS_STR_TO_INT: dict[str, int] = {
 # ════════════════════════════════════════════════════════════════════════════
  
 def _gmfcs_lookup(introductory_df: pl.DataFrame) -> dict[str, int]:
-    """Return {introductory_id: gmfcs_int} from the introductory table."""
     return {
-        uid: _GMFCS_STR_TO_INT.get(lvl, 0)
+        uid: _GMFCS_STR_TO_INT.get(lvl, None)
         for uid, lvl in zip(
             introductory_df["id"].to_list(),
             introductory_df["gmfcs_lvl"].to_list(),
         )
     }
- 
  
 def _extract_milestone_keys_per_age(df: pl.DataFrame) -> pl.DataFrame:
     """Extract and aggregate unique milestone keys per (introductory_id, age)."""
@@ -141,12 +139,19 @@ def motorscore_milestones_setvalue(
     per_age = _extract_milestone_keys_per_age(df)
     cum     = _cumulate_milestones(per_age)
     gmfcs   = _gmfcs_lookup(introductory_df)
- 
+    
+    def _possible_milestones(age: int, gmfcs_int) -> float:
+        age_dict = POSSIBLE_MILESTONES_BY_AGE_GMFCS[int(age)]
+        if gmfcs_int is None:
+            # Unknown GMFCS — use mean across all levels
+            return sum(age_dict.values()) / len(age_dict)
+        return age_dict.get(gmfcs_int)
+
     possible = [
-        POSSIBLE_MILESTONES_BY_AGE_GMFCS[int(age)].get(gmfcs.get(uid, 0))
+        int(POSSIBLE_MILESTONES_BY_AGE_GMFCS[int(age)].get(gmfcs.get(uid) or 3))
         for uid, age in zip(cum["introductory_id"].to_list(), cum["age"].to_list())
     ]
- 
+
     return (
         cum.with_columns(pl.Series("possible_milestones", possible))
         .with_columns(
@@ -193,8 +198,12 @@ def motorscore_impairments_setvalue(
         per_age["age"].to_list(),
         per_age["sum_ratings"].to_list(),
     ):
-        gmfcs_int = gmfcs.get(uid, 0)
-        n_named   = N_NAMED_BY_AGE_GMFCS[int(age)].get(gmfcs_int, 18)
+        gmfcs_int = gmfcs.get(uid)
+        if gmfcs_int is None:
+            # Unknown GMFCS — use mean across all levels
+            n_named = round(sum(N_NAMED_BY_AGE_GMFCS[int(age)].values()) / len(N_NAMED_BY_AGE_GMFCS[int(age)]))
+        else:
+            n_named = N_NAMED_BY_AGE_GMFCS[int(age)].get(gmfcs_int, 18)
         max_score = n_named * 5
         mms       = max_score - s
         mms_norm  = (mms / max_score) if max_score > 0 else None
