@@ -55,7 +55,7 @@ IMAGES_DIR.mkdir(exist_ok=True)
 #    15. delta_combined_score
 #    16. delta_motorical_score
 
-TARGET = "delta_motorical_score"
+TARGET = "delta_milestone_score_setvalue"
 TRAINING_FEATURES = [
     #"age",
     #"gmfcs_int",

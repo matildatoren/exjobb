@@ -46,6 +46,7 @@ _GMFCS_MAP: dict[str, int] = {
     "Level III – Walks with assistive devices": 3,
     "Level IV – Limited mobility, primarily uses a wheelchair": 4,
     "Level V – Severe limitations, needs full assistance for mobility": 5,
+    "Not sure / Don't know": 3,  # default to middle of scale
 }
 
 
