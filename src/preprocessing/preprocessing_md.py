@@ -35,6 +35,14 @@ def sum_impairments(struct):
 
     return total
 
+def count_impairments(struct) -> int:
+    """Count how many impairments have a non-zero rating in details."""
+    if struct is None:
+        return 0
+    data = dict(struct) if isinstance(struct, dict) else {}
+    details = data.get("details", {})
+    return sum(1 for v in details.values() if v not in (None, 0, 0.0, "", "0"))
+
 def extract_milestone_keys(struct) -> set[str]:
     """
     Gör milestones-listan till ett set av stabila nycklar (id/label/value eller str()).

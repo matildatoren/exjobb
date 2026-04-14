@@ -1,451 +1,450 @@
-# Important note:
-# This is not an objective clinical measure, but an LLM-derived summary score.
+"""
+LLM Motor Score — Print-Ready Figures
+=======================================
+Generates clean, publication-quality figures from the merged dataset CSV.
 
-from typing import List, Literal
-import time
+Figures produced:
+  1. Individual scatter + regression line for each log training variable (2×2)
+     Y-axis: delta LLM motor score (year-over-year change)
+  2. Spearman correlation bar chart
+  3. LLM motor score distribution by GMFCS level (boxplot)
+  4. Motor score trajectories per child over age
+  5. Other training hours vs motor score, coloured by GMFCS
 
-import polars as pl
-from ollama import chat
-from pydantic import BaseModel
+Usage:
+    cd src/FreeText
+    python llm_motorscore_figures.py
 
-import sys
+Requires:
+    results/llm_motorscore_merged_dataset.csv  (from llm_motorscore_regression.py)
+"""
+
 from pathlib import Path
 
-import json
-import re
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+from scipy import stats
 
-# Resolve imports regardless of where the script is called from
-ROOT = Path(__file__).resolve().parents[1]  # src/
-sys.path.append(str(ROOT))
+# ─── Paths ────────────────────────────────────────────────────────────────────
 
-from connect_db import get_connection
-from dataloader import load_data
+HERE        = Path(__file__).resolve().parent
+MERGED_CSV  = HERE / "results" / "llm_motorscore_merged_dataset.csv"
+FIGURES_DIR = HERE / "figures"
+FIGURES_DIR.mkdir(exist_ok=True)
 
+# ─── Style ────────────────────────────────────────────────────────────────────
 
-# ---------------------------
-# SETTINGS
-# ---------------------------
+PALETTE = {
+    "blue":       "#2B6CB0",
+    "light_blue": "#BEE3F8",
+    "green":      "#276749",
+    "orange":     "#C05621",
+    "purple":     "#553C9A",
+    "gray":       "#718096",
+    "light_gray": "#EDF2F7",
+    "dark":       "#1A202C",
+}
 
-MODEL_NAME = "gemma4:26b"
+GMFCS_COLORS = {
+    1: "#2B6CB0",
+    2: "#38A169",
+    3: "#D69E2E",
+    4: "#C05621",
+    5: "#702459",
+}
 
-INTRODUCTORY_IDS = [
-        "c0990a55-916e-47ba-b29a-aee83d9f33c9",
-        "65ab3206-7371-4471-845c-6d238050494f",
-        "c8f4ec50-18b6-47ed-92a3-919da180a10d",
-        "8dba1f55-9e79-4e62-90c3-02e9609d3feb",
-        "f1856ef8-2fe0-480d-9635-cfc0be308458",
-        "771d12c3-bc1a-4a97-ad27-00d35b24f87e",
-        "1019fb0a-480d-4bef-b8f9-493b9dfe253b",
-        "6e7aeec2-2846-433d-a4ac-0e753da08530",
-        "e30d335e-3a7a-484d-951d-f8e3f17ccfb3",
-        "578adb11-a12f-4121-a567-afe67c25640b",
-        "0a584ba1-cdf4-4251-9168-5f8ccc0240e3",
-        "7e42b31a-c597-4418-9bf6-a8c3286d049f",
-        "89e4bf27-9a6f-45e8-a415-ef53f23f7931",
-        "16f3f961-07a2-4099-8498-1bad9c2faa19",
-        "44cd783c-b33d-4553-89cd-2a73b59e1982",
-        "d2703a20-7b4a-4624-b31a-306eebe4caa0",
-        "1d0afd8d-6945-488a-964c-724e95db6696",
-        "f9231c8d-2ade-4c0e-a878-a9524ccc3d65",
-        "cd26a009-6e51-4372-b151-b7d2bb8b7183",
-        "df67e7ea-0b50-408b-9342-4c29d0efa839",
-        "30302f7a-c470-47bf-8f0e-d104b3065d99",
-
-]
-
-OUTPUT_DIR = Path(__file__).resolve().parent / "outputs"
-OUTPUT_DIR.mkdir(exist_ok=True)
-
-OUTPUT_TXT_PATH = OUTPUT_DIR / "llm_motorscore_results.txt"
-OUTPUT_CSV_PATH = OUTPUT_DIR / "llm_motorscore_results.csv"
-
-
-# ---------------------------
-# STRUCTURED OUTPUT
-# ---------------------------
-
-class MotorAssessment(BaseModel):
-    motor_score_1_to_10: int
-    confidence: Literal["low", "medium", "high"]
-    summary: str
-    gross_motor_level: str
-    fine_motor_level: str
-    impairment_severity: str
-    supporting_evidence: List[str]
+plt.rcParams.update({
+    "font.family":        "DejaVu Sans",
+    "font.size":          11,
+    "axes.titlesize":     13,
+    "axes.titleweight":   "bold",
+    "axes.labelsize":     11,
+    "axes.spines.top":    False,
+    "axes.spines.right":  False,
+    "axes.linewidth":     1.1,
+    "xtick.direction":    "out",
+    "ytick.direction":    "out",
+    "xtick.major.size":   4,
+    "ytick.major.size":   4,
+    "legend.frameon":     False,
+    "figure.dpi":         150,
+    "savefig.dpi":        300,
+    "savefig.bbox":       "tight",
+    "savefig.facecolor":  "white",
+})
 
 
-# ---------------------------
-# CLEAN TEXT
-# ---------------------------
+# ─── Helpers ──────────────────────────────────────────────────────────────────
 
-def clean_text(value: object) -> str | None:
+def load_data() -> pd.DataFrame:
+    if not MERGED_CSV.exists():
+        raise FileNotFoundError(
+            f"Merged dataset not found: {MERGED_CSV}\n"
+            "Run llm_motorscore_regression.py first."
+        )
+    return pd.read_csv(MERGED_CSV)
+
+
+def compute_delta_llm(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Clean a database value and return a usable string.
-
-    Args:
-        value (object): Raw database value.
-
-    Returns:
-        str | None: Cleaned text, or None if the value is empty.
+    Compute delta_llm_motor_score = score(age) - score(age-1) per child.
+    Returns one row per year-to-year transition, keeping the training
+    features from the later year (the year in which training occurred).
     """
-    if value is None:
-        return None
-
-    text = str(value).strip()
-
-    if not text:
-        return None
-
-    if text.lower() in {"none", "null", "nan"}:
-        return None
-
-    return text
-
-def extract_json_content(text: str) -> str:
-    """
-    Remove markdown code fences if the model wraps the JSON output
-    in ```json ... ```.
-
-    Args:
-        text (str): Raw model output.
-
-    Returns:
-        str: Clean JSON string.
-    """
-    text = text.strip()
-
-    if text.startswith("```json"):
-        text = text.removeprefix("```json").strip()
-    elif text.startswith("```"):
-        text = text.removeprefix("```").strip()
-
-    if text.endswith("```"):
-        text = text.removesuffix("```").strip()
-
-    return text
-
-def repair_json_text(text: str) -> str:
-    """
-    Repair a few common JSON formatting mistakes from LLM output.
-
-    Args:
-        text (str): Raw or cleaned JSON-like string.
-
-    Returns:
-        str: Repaired JSON string.
-    """
-    text = text.strip()
-
-    # Fix common mistake:
-    # "supporting_evidence: [
-    # -> "supporting_evidence": [
-    text = re.sub(
-        r'"([A-Za-z0-9_]+):\s*(\[|\{|"|-|\d)',
-        r'"\1": \2',
-        text,
+    df = df.sort_values(["introductory_id", "age"]).copy()
+    df["delta_llm_motor_score"] = (
+        df.groupby("introductory_id")["llm_motor_score"].diff()
     )
+    return df.dropna(subset=["delta_llm_motor_score"]).reset_index(drop=True)
 
-    return text
+
+def _add_regression_line(ax, x, y, color, lw=2.0):
+    """Fit and draw OLS regression line with shaded 95% CI band."""
+    mask = ~(np.isnan(x) | np.isnan(y))
+    x, y = x[mask], y[mask]
+    if len(x) < 4:
+        return None
+
+    slope, intercept, r, p, _ = stats.linregress(x, y)
+    x_line = np.linspace(x.min(), x.max(), 200)
+    y_line = intercept + slope * x_line
+
+    n     = len(x)
+    x_bar = x.mean()
+    se    = np.sqrt(
+        np.sum((y - (intercept + slope * x)) ** 2) / (n - 2)
+        * (1 / n + (x_line - x_bar) ** 2 / np.sum((x - x_bar) ** 2))
+    )
+    t_crit = stats.t.ppf(0.975, df=n - 2)
+
+    ax.fill_between(x_line, y_line - t_crit * se, y_line + t_crit * se,
+                    alpha=0.12, color=color)
+    ax.plot(x_line, y_line, color=color, linewidth=lw, zorder=3)
+
+    sig = "***" if p < 0.001 else "**" if p < 0.01 else "*" if p < 0.05 else "n.s."
+    return r, p, slope, sig
 
 
-def normalize_motor_assessment_keys(text: str) -> str:
-    data = json.loads(text)
+def _annotate_stats(ax, r, p, sig, loc="upper left"):
+    txt   = f"ρ = {r:.2f}  {sig}"
+    props = dict(boxstyle="round,pad=0.3", facecolor="white",
+                 edgecolor="#CBD5E0", alpha=0.9)
+    x_pos = 0.04 if loc == "upper left" else 0.96
+    ha    = "left" if loc == "upper left" else "right"
+    ax.text(x_pos, 0.95, txt, transform=ax.transAxes,
+            fontsize=9.5, verticalalignment="top", ha=ha, bbox=props)
 
-    key_map = {
-        "motor_function_level": "motor_score_1_to_10",
-        "motor_function_score": "motor_score_1_to_10",
-        "motor_score_1_and_10": "motor_score_1_to_10",
-        "score": "motor_score_1_to_10",
-        "reasoning": "summary",
-        "motor_summary": "summary",
-        "gross_motor": "gross_motor_level",
-        "gross_motor_leg_level": "gross_motor_level",
-        "fine_motor": "fine_motor_level",
-        "impairment_level": "impairment_severity",
-        "evidence": "supporting_evidence",
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Figure 1 — Individual regressions vs delta score (2×2 grid)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def fig_individual_regressions(df: pd.DataFrame):
+    delta_df = compute_delta_llm(df)
+    n        = len(delta_df)
+    n_kids   = delta_df["introductory_id"].nunique()
+
+    variables = [
+        ("log_total_home_training_hours",  "log Home training hours / year",          PALETTE["blue"]),
+        ("log_total_other_training_hours", "log Other training hours / year",         PALETTE["green"]),
+        ("log_neurohab_hours",             "log Intensive therapy hours / year",      PALETTE["orange"]),
+        ("log_active_total_hours",         "log Total active training hours / year",  PALETTE["purple"]),
+    ]
+
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+    axes = axes.flatten()
+
+    for ax, (feat, label, color) in zip(axes, variables):
+        x = delta_df[feat].values.astype(float)
+        y = delta_df["delta_llm_motor_score"].values.astype(float)
+
+        jitter = np.random.default_rng(42).uniform(-0.06, 0.06, size=len(y))
+        ax.scatter(x, y + jitter, color=color, alpha=0.55, s=45,
+                   edgecolors="white", linewidths=0.5, zorder=2)
+
+        out = _add_regression_line(ax, x, y, color)
+        if out:
+            r, p, slope, sig = out
+            _annotate_stats(ax, r, p, sig,
+                            loc="upper right" if slope < 0 else "upper left")
+
+        ax.axhline(0, color=PALETTE["gray"], linewidth=0.8,
+                   linestyle="--", alpha=0.6, zorder=1)
+        ax.set_xlabel(label)
+        ax.set_ylabel("Δ LLM motor score (year-over-year)")
+        ax.set_title(label)
+        ax.tick_params(labelsize=10)
+
+    fig.suptitle(
+        "Δ LLM Motor Score (year-over-year) vs Log Training Hours\n"
+        f"(n={n} transitions, {n_kids} children, shaded = 95% CI)",
+        fontsize=14, fontweight="bold", y=1.01,
+    )
+    plt.tight_layout(h_pad=3.5, w_pad=3.0)
+
+    path = FIGURES_DIR / "fig1_individual_regressions.pdf"
+    plt.savefig(path)
+    plt.savefig(path.with_suffix(".png"))
+    print(f"  Saved: {path.name}")
+    plt.show()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Figure 2 — Spearman correlation bar chart
+# ══════════════════════════════════════════════════════════════════════════════
+
+def fig_spearman_bars(df: pd.DataFrame):
+    features = {
+        "log_total_home_training_hours":      "log Home training",
+        "log_total_other_training_hours":     "log Other training",
+        "log_neurohab_hours":                 "log Intensive therapy",
+        "log_cat_neurodevelopmental_reflex":  "log Neurodevelopmental/reflex",
+        "log_cat_motor_learning_task":        "log Motor learning",
+        "log_cat_technology_assisted":        "log Technology assisted",
+        "log_cat_suit_based":                 "log Suit based",
+        "log_cat_physical_conditioning":      "log Physical conditioning",
+        "log_cat_complementary":              "log Complementary",
+        "has_any_device":                     "Uses any device",
+        "has_any_medical_treatment":          "Any medical treatment",
+        "gmfcs_int":                          "GMFCS level",
     }
 
-    normalized = {}
-    for key, value in data.items():
-        normalized[key_map.get(key, key)] = value
+    results = []
+    for feat, label in features.items():
+        if feat not in df.columns:
+            continue
+        sub = df[[feat, "llm_motor_score"]].dropna()
+        r, p = stats.spearmanr(sub[feat], sub["llm_motor_score"])
+        sig  = "***" if p < 0.001 else "**" if p < 0.01 else "*" if p < 0.05 else ""
+        results.append({"label": label, "rho": r, "p": p, "sig": sig, "n": len(sub)})
 
-    return json.dumps(normalized, ensure_ascii=False)
+    res = pd.DataFrame(results).sort_values("rho")
 
+    fig, ax = plt.subplots(figsize=(9, 7))
 
-# ---------------------------
-# BUILD INPUT FOR ONE ROW
-# ---------------------------
+    colors = [PALETTE["green"] if r > 0 else PALETTE["orange"] for r in res["rho"]]
+    bars   = ax.barh(res["label"], res["rho"], color=colors, alpha=0.82,
+                     height=0.62, edgecolor="white", linewidth=0.5)
 
-def build_md_input(row: dict) -> str:
-    """
-    Build structured input for the LLM from one motorical_development row.
+    for bar, (_, row) in zip(bars, res.iterrows()):
+        if row["sig"]:
+            x_pos = row["rho"] + (0.012 if row["rho"] >= 0 else -0.012)
+            ha    = "left" if row["rho"] >= 0 else "right"
+            ax.text(x_pos, bar.get_y() + bar.get_height() / 2,
+                    row["sig"], va="center", ha=ha, fontsize=10,
+                    color=PALETTE["dark"], fontweight="bold")
 
-    Args:
-        row (dict): One row from the motorical_development table.
+    ax.axvline(0, color=PALETTE["dark"], linewidth=1.0, zorder=5)
+    ax.axvline( 0.3, color=PALETTE["gray"], linewidth=0.6, linestyle="--", alpha=0.5)
+    ax.axvline(-0.3, color=PALETTE["gray"], linewidth=0.6, linestyle="--", alpha=0.5)
+    ax.set_xlabel("Spearman ρ  (with LLM motor score)")
+    ax.set_title("Spearman Correlations with LLM Motor Score",
+                 fontweight="bold", pad=12)
+    ax.set_xlim(-0.65, 0.75)
 
-    Returns:
-        str: Formatted input text for the LLM.
-    """
-    return f"""
-[Motorical Development Record]
+    legend_elements = [
+        Line2D([0], [0], color=PALETTE["green"],  lw=0, marker="s",
+               markersize=10, label="Positive association"),
+        Line2D([0], [0], color=PALETTE["orange"], lw=0, marker="s",
+               markersize=10, label="Negative association"),
+    ]
+    ax.legend(handles=legend_elements, loc="lower right", fontsize=9)
+    ax.text(0.99, -0.08, "* p<0.05  ** p<0.01  *** p<0.001",
+            transform=ax.transAxes, ha="right", fontsize=8.5,
+            color=PALETTE["gray"])
 
-Age: {row.get("age")}
-
-Gross motor development:
-{clean_text(row.get("gross_motor_development")) or "unknown"}
-
-Fine motor development:
-{clean_text(row.get("fine_motor_development")) or "unknown"}
-
-Motorical impairments (lower):
-{clean_text(row.get("motorical_impairments_lower")) or "unknown"}
-
-Motorical impairments (upper):
-{clean_text(row.get("motorical_impairments_upper")) or "unknown"}
-
-Story:
-{clean_text(row.get("story")) or "unknown"}
-""".strip()
-
-
-# ---------------------------
-# LLM ANALYSIS
-# ---------------------------
-
-def analyze_md_row(text: str, model_name: str = MODEL_NAME) -> MotorAssessment:
-    """
-    Analyze one motorical development record with the LLM.
-
-    Args:
-        text (str): Formatted input text for one record.
-        model_name (str): Ollama model name.
-
-    Returns:
-        MotorAssessment: Structured LLM assessment.
-    """
-    system_prompt = """
-You are evaluating motor development in children with cerebral palsy based on structured survey data.
-
-TASK:
-Estimate the child's motor function level on a scale from 1 to 10.
-
-IMPORTANT:
-- Base your assessment ONLY on the provided information.
-- Use both structured responses and free-text descriptions.
-- Do NOT guess beyond what is stated.
-- Be conservative.
-- Return raw JSON only.
-- Do NOT wrap the JSON in markdown code fences.
-- Use EXACTLY these field names and no others:
-  - motor_score_1_to_10
-  - confidence
-  - summary
-  - gross_motor_level
-  - fine_motor_level
-  - impairment_severity
-  - supporting_evidence
-
-SCALE GUIDELINES:
-1 = very limited motor function, severe impairments
-3 = major limitations, very few abilities
-5 = moderate motor function with clear limitations
-7 = relatively good motor abilities with some impairments
-10 = very strong motor function, minimal limitations
-
-FIELD REQUIREMENTS:
-- motor_score_1_to_10: integer from 1 to 10
-- confidence: one of "low", "medium", "high"
-- summary: short English summary
-- gross_motor_level: short English description
-- fine_motor_level: short English description
-- impairment_severity: short English description
-- supporting_evidence: list of short English strings
-
-LANGUAGE:
-- Input may be multilingual.
-- Output MUST be in English.
-
-Return ONLY valid JSON matching the required field names exactly.
-"""
-
-    user_prompt = f"""
-Assess motor development for this record:
-
-{text}
-"""
-
-    response = chat(
-        model=model_name,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        format=MotorAssessment.model_json_schema(),
-    )
-
-    cleaned_response = extract_json_content(response.message.content)
-    repaired_response = repair_json_text(cleaned_response)
-    normalized_response = normalize_motor_assessment_keys(repaired_response)
-
-    try:
-        return MotorAssessment.model_validate_json(normalized_response)
-    except Exception:
-        print("\nRaw model output:")
-        print(response.message.content)
-        print("\nCleaned / repaired output:")
-        print(repaired_response)
-        print("\nNormalized output:")
-        print(normalized_response)
-        raise
-# ---------------------------
-# ANALYZE ONE CHILD
-# ---------------------------
-
-def analyze_child(df: pl.DataFrame, introductory_id: str) -> list[dict]:
-    """
-    Analyze all motorical development rows for one child.
-
-    Args:
-        df (pl.DataFrame): Motorical development table.
-        introductory_id (str): Child/survey id.
-
-    Returns:
-        list[dict]: One result dict per age row.
-    """
-    df_child = (
-        df.filter(pl.col("introductory_id") == introductory_id)
-        .sort("age")
-    )
-
-    if df_child.height == 0:
-        return []
-
-    child_results = []
-
-    for row in df_child.iter_rows(named=True):
-        row_start_time = time.perf_counter()
-
-        text_input = build_md_input(row)
-        result = analyze_md_row(text_input)
-
-        row_elapsed_time = time.perf_counter() - row_start_time
-        print(f"    Age {row.get('age')} done in {row_elapsed_time:.2f} seconds.")
-
-        child_results.append({
-            "introductory_id": row.get("introductory_id"),
-            "age": row.get("age"),
-            "llm_motor_score": result.motor_score_1_to_10,
-            "confidence": result.confidence,
-            "summary": result.summary,
-            "gross_motor_level": result.gross_motor_level,
-            "fine_motor_level": result.fine_motor_level,
-            "impairment_severity": result.impairment_severity,
-            "supporting_evidence": " | ".join(result.supporting_evidence),
-        })
-
-    return child_results
+    plt.tight_layout()
+    path = FIGURES_DIR / "fig2_spearman_correlations.pdf"
+    plt.savefig(path)
+    plt.savefig(path.with_suffix(".png"))
+    print(f"  Saved: {path.name}")
+    plt.show()
 
 
-# ---------------------------
-# WRITE TEXT REPORT
-# ---------------------------
+# ══════════════════════════════════════════════════════════════════════════════
+# Figure 3 — Motor score by GMFCS level (boxplot)
+# ══════════════════════════════════════════════════════════════════════════════
 
-def write_text_report(
-    results_df: pl.DataFrame,
-    output_path: Path,
-    total_elapsed_time: float,
-) -> None:
-    """
-    Write a human-readable text report.
+def fig_gmfcs_boxplot(df: pd.DataFrame):
+    if "gmfcs_int" not in df.columns:
+        print("  gmfcs_int not found — skipping fig 3.")
+        return
 
-    Args:
-        results_df (pl.DataFrame): Final results table.
-        output_path (Path): Path to output text file.
-        total_elapsed_time (float): Total runtime in seconds.
+    gmfcs_levels = sorted(df["gmfcs_int"].dropna().unique())
+    groups       = [df[df["gmfcs_int"] == lvl]["llm_motor_score"].dropna().values
+                    for lvl in gmfcs_levels]
+    labels       = [f"GMFCS {int(lvl)}\n(n={len(g)})" for lvl, g in zip(gmfcs_levels, groups)]
 
-    Returns:
-        None
-    """
-    lines: list[str] = []
-    lines.append("LLM MOTOR SCORE ANALYSIS")
-    lines.append("=" * 80)
-    lines.append(f"Total runtime: {total_elapsed_time:.2f} seconds")
-    lines.append("")
+    fig, ax = plt.subplots(figsize=(9, 6))
 
-    if results_df.height == 0:
-        lines.append("No results were generated.")
-    else:
-        for row in results_df.sort(["introductory_id", "age"]).iter_rows(named=True):
-            lines.append(f"Introductory ID: {row['introductory_id']}")
-            lines.append(f"Age: {row['age']}")
-            lines.append(f"LLM motor score: {row['llm_motor_score']}")
-            lines.append(f"Confidence: {row['confidence']}")
-            lines.append(f"Gross motor level: {row['gross_motor_level']}")
-            lines.append(f"Fine motor level: {row['fine_motor_level']}")
-            lines.append(f"Impairment severity: {row['impairment_severity']}")
-            lines.append(f"Summary: {row['summary']}")
-            lines.append(f"Supporting evidence: {row['supporting_evidence']}")
-            lines.append("-" * 80)
+    bp = ax.boxplot(groups, patch_artist=True, widths=0.52, notch=False,
+                    medianprops=dict(color="white", linewidth=2.5),
+                    whiskerprops=dict(linewidth=1.3),
+                    capprops=dict(linewidth=1.3),
+                    flierprops=dict(marker="o", markersize=4, alpha=0.5))
 
-    output_path.write_text("\n".join(lines), encoding="utf-8")
+    for patch, lvl in zip(bp["boxes"], gmfcs_levels):
+        patch.set_facecolor(GMFCS_COLORS.get(int(lvl), PALETTE["gray"]))
+        patch.set_alpha(0.82)
+
+    for i, (grp, lvl) in enumerate(zip(groups, gmfcs_levels), start=1):
+        jitter = np.random.default_rng(int(lvl)).uniform(-0.18, 0.18, size=len(grp))
+        ax.scatter(np.full(len(grp), i) + jitter, grp,
+                   color=GMFCS_COLORS.get(int(lvl), PALETTE["gray"]),
+                   alpha=0.45, s=30, zorder=3, edgecolors="white", linewidths=0.4)
+
+    if len([g for g in groups if len(g) >= 3]) >= 2:
+        stat, p = stats.kruskal(*[g for g in groups if len(g) >= 3])
+        sig     = "***" if p < 0.001 else "**" if p < 0.01 else "*" if p < 0.05 else "n.s."
+        ax.text(0.98, 0.97,
+                f"Kruskal-Wallis\nH={stat:.2f}, p={p:.3f} {sig}",
+                transform=ax.transAxes, ha="right", va="top", fontsize=9,
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="white",
+                          edgecolor="#CBD5E0", alpha=0.9))
+
+    ax.set_xticklabels(labels, fontsize=10)
+    ax.set_ylabel("LLM motor score (1–10)")
+    ax.set_ylim(0.2, 11.2)
+    ax.set_yticks(range(1, 11))
+    ax.set_title("LLM Motor Score Distribution by GMFCS Level",
+                 fontweight="bold", pad=12)
+    ax.tick_params(axis="x", length=0)
+
+    plt.tight_layout()
+    path = FIGURES_DIR / "fig3_gmfcs_boxplot.pdf"
+    plt.savefig(path)
+    plt.savefig(path.with_suffix(".png"))
+    print(f"  Saved: {path.name}")
+    plt.show()
 
 
-# ---------------------------
-# MAIN FUNCTION
-# ---------------------------
+# ══════════════════════════════════════════════════════════════════════════════
+# Figure 4 — Motor score trajectories per child over age
+# ══════════════════════════════════════════════════════════════════════════════
 
-def main() -> None:
-    """
-    Run LLM motor score analysis for all ids in INTRODUCTORY_IDS
-    and save results to output files.
+def fig_trajectories(df: pd.DataFrame):
+    if "gmfcs_int" not in df.columns:
+        print("  gmfcs_int not found — skipping fig 4.")
+        return
 
-    Returns:
-        None
-    """
-    total_start_time = time.perf_counter()
+    fig, ax = plt.subplots(figsize=(10, 6))
 
-    conn = get_connection()
-    data = load_data(conn)
-    df = data["motorical_development"]
+    for child_id, grp in df.groupby("introductory_id"):
+        grp = grp.sort_values("age")
+        lvl = int(grp["gmfcs_int"].mode()[0]) if not grp["gmfcs_int"].isna().all() else 0
+        col = GMFCS_COLORS.get(lvl, PALETTE["gray"])
+        ax.plot(grp["age"], grp["llm_motor_score"],
+                color=col, alpha=0.45, linewidth=1.4,
+                marker="o", markersize=4, markeredgewidth=0.3,
+                markeredgecolor="white", zorder=2)
 
-    all_results: list[dict] = []
+    for lvl, col in GMFCS_COLORS.items():
+        grp = df[df["gmfcs_int"] == lvl].groupby("age")["llm_motor_score"].mean()
+        if len(grp) >= 2:
+            ax.plot(grp.index, grp.values, color=col, linewidth=2.8,
+                    marker="o", markersize=7, markeredgewidth=1.2,
+                    markeredgecolor="white", zorder=4, label=f"GMFCS {lvl} (mean)")
 
-    for introductory_id in INTRODUCTORY_IDS:
-        child_start_time = time.perf_counter()
-        print(f"Processing introductory_id: {introductory_id}")
+    ax.set_xlabel("Age (years)")
+    ax.set_ylabel("LLM motor score (1–10)")
+    ax.set_title("LLM Motor Score Trajectories by Age\n(thin lines = individual children, thick = GMFCS group mean)",
+                 fontweight="bold", pad=12)
+    ax.set_yticks(range(1, 11))
+    ax.set_xticks(sorted(df["age"].unique()))
+    ax.legend(loc="upper left", fontsize=9)
 
-        try:
-            child_results = analyze_child(df, introductory_id)
+    plt.tight_layout()
+    path = FIGURES_DIR / "fig4_trajectories.pdf"
+    plt.savefig(path)
+    plt.savefig(path.with_suffix(".png"))
+    print(f"  Saved: {path.name}")
+    plt.show()
 
-            if not child_results:
-                print(f"  No motorical development rows found for {introductory_id}")
-                continue
 
-            all_results.extend(child_results)
+# ══════════════════════════════════════════════════════════════════════════════
+# Figure 5 — Other training hours vs motor score, coloured by GMFCS
+# ══════════════════════════════════════════════════════════════════════════════
 
-            child_elapsed_time = time.perf_counter() - child_start_time
-            print(
-                f"  Done. Processed {len(child_results)} row(s) "
-                f"in {child_elapsed_time:.2f} seconds."
-            )
+def fig_other_training_by_gmfcs(df: pd.DataFrame):
+    if "gmfcs_int" not in df.columns or "total_other_training_hours" not in df.columns:
+        print("  Required columns not found — skipping fig 5.")
+        return
 
-        except Exception as e:
-            print(f"  Error for {introductory_id}: {e}")
+    fig, ax = plt.subplots(figsize=(9, 6))
 
-    results_df = pl.DataFrame(all_results) if all_results else pl.DataFrame()
+    for lvl in sorted(df["gmfcs_int"].dropna().unique()):
+        grp   = df[df["gmfcs_int"] == lvl].dropna(
+            subset=["total_other_training_hours", "llm_motor_score"])
+        color = GMFCS_COLORS.get(int(lvl), PALETTE["gray"])
 
-    if results_df.height > 0:
-        results_df.write_csv(OUTPUT_CSV_PATH)
+        jitter = np.random.default_rng(int(lvl) * 7).uniform(-0.1, 0.1, size=len(grp))
+        ax.scatter(grp["total_other_training_hours"],
+                   grp["llm_motor_score"] + jitter,
+                   color=color, alpha=0.65, s=55,
+                   edgecolors="white", linewidths=0.5,
+                   label=f"GMFCS {int(lvl)} (n={len(grp)})", zorder=3)
 
-    total_elapsed_time = time.perf_counter() - total_start_time
+        if len(grp) >= 5:
+            x = grp["total_other_training_hours"].values.astype(float)
+            y = grp["llm_motor_score"].values.astype(float)
+            slope, intercept, *_ = stats.linregress(x, y)
+            x_line = np.linspace(x.min(), x.max(), 100)
+            ax.plot(x_line, intercept + slope * x_line,
+                    color=color, linewidth=1.8, alpha=0.8, zorder=2)
 
-    write_text_report(results_df, OUTPUT_TXT_PATH, total_elapsed_time)
+    sub = df.dropna(subset=["total_other_training_hours", "llm_motor_score"])
+    _add_regression_line(ax,
+                         sub["total_other_training_hours"].values.astype(float),
+                         sub["llm_motor_score"].values.astype(float),
+                         color=PALETTE["dark"], lw=2.2)
 
-    print("\nFinished.")
-    print(f"Total runtime: {total_elapsed_time:.2f} seconds.")
-    print(f"Text report saved to: {OUTPUT_TXT_PATH}")
-    if results_df.height > 0:
-        print(f"CSV file saved to: {OUTPUT_CSV_PATH}")
+    r, p = stats.spearmanr(sub["total_other_training_hours"], sub["llm_motor_score"])
+    sig  = "***" if p < 0.001 else "**" if p < 0.01 else "*" if p < 0.05 else "n.s."
+    ax.text(0.97, 0.05,
+            f"Overall ρ = {r:.2f} {sig}",
+            transform=ax.transAxes, ha="right", fontsize=10,
+            bbox=dict(boxstyle="round,pad=0.3", facecolor="white",
+                      edgecolor="#CBD5E0", alpha=0.9))
+
+    ax.set_xlabel("Other training hours / year")
+    ax.set_ylabel("LLM motor score (1–10)")
+    ax.set_ylim(0.2, 11.2)
+    ax.set_yticks(range(1, 11))
+    ax.set_title("Other Training Hours vs LLM Motor Score by GMFCS Level",
+                 fontweight="bold", pad=12)
+    ax.legend(loc="upper left", fontsize=9)
+
+    plt.tight_layout()
+    path = FIGURES_DIR / "fig5_other_training_by_gmfcs.pdf"
+    plt.savefig(path)
+    plt.savefig(path.with_suffix(".png"))
+    print(f"  Saved: {path.name}")
+    plt.show()
+
+
+# ─── Main ─────────────────────────────────────────────────────────────────────
+
+def main():
+    print("=" * 60)
+    print("  Generating print-ready figures …")
+    print("=" * 60)
+
+    df = load_data()
+    print(f"  Loaded {len(df)} rows, {df['introductory_id'].nunique()} children\n")
+
+    np.random.seed(42)
+
+    fig_individual_regressions(df)
+    fig_spearman_bars(df)
+    fig_gmfcs_boxplot(df)
+    fig_trajectories(df)
+    fig_other_training_by_gmfcs(df)
+
+    print(f"\n  All figures saved to: {FIGURES_DIR}")
+    print("  Both .pdf (print) and .png (preview) versions saved.")
+    print("\nDone.")
 
 
 if __name__ == "__main__":
