@@ -71,12 +71,12 @@ CONFIG = {
         ("log_total_other_training_hours", "Sports / other"),
         ("log_neurohab_hours",             "Intensive therapy"),
         ("log_active_total_hours",         "Combined active total"),
-        ("log_cat_neurodevelopmental_reflex",         "Neurodevelopmental and Reflex based therapies"),
-        ("log_cat_motor_learning_task",         "Motor learning and task oriented learning"),
-        ("log_cat_technology_assisted",         "Technology assisted therapies"),
-        ("log_cat_suit_based",         "Suit based therapies"),
-        ("log_cat_physical_conditioning",         "Physical conditioning and activity based therapies"),
-        ("log_cat_complementary",         "Complementary therapies"),
+        # ("log_cat_neurodevelopmental_reflex",         "Neurodevelopmental and Reflex based therapies"),
+        # ("log_cat_motor_learning_task",         "Motor learning and task oriented learning"),
+        # ("log_cat_technology_assisted",         "Technology assisted therapies"),
+        # ("log_cat_suit_based",         "Suit based therapies"),
+        # ("log_cat_physical_conditioning",         "Physical conditioning and activity based therapies"),
+        # ("log_cat_complementary",         "Complementary therapies"),
       ],
 
     # Input — kolumn som används i overall dose-response-plotten
@@ -311,7 +311,7 @@ def plot_training_components(
     panels    = results["component_results"]
 
     n       = len(panels)
-    n_cols  = 3                       
+    n_cols  = 2                       
     n_rows  = (n + n_cols - 1) // n_cols 
 
     fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 5 * n_rows))
@@ -337,16 +337,16 @@ def plot_training_components(
         ax.set_ylabel(f"Δ {title}")
         ax.set_title(r["label"])
         ax.annotate(
-            f"R² = {r['r2']:.3f}\nn = {r['n']} (users only)",
+            f"k = {r['coeff']:.3f}\nR² = {r['r2']:.3f}\nn = {r['n']}",
             xy=(0.97, 0.97), xycoords="axes fraction",
             ha="right", va="top", fontsize=9,
             bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.7),
-        )
+)
 
     for j in range(len(panels), len(axes)):
         axes[j].set_visible(False)
 
-    plt.suptitle(f"Dose-Response by Training Component — {title}", fontsize=13)
+    plt.suptitle(f"Motorscore improvement by Training-category — {title}", fontsize=13)
     plt.tight_layout()
     plt.savefig(IMAGES_DIR / filename, dpi=150)
     print(f"Saved: {filename}")
