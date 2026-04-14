@@ -41,6 +41,7 @@ GROUP_A = [
     "c8f4ec50-18b6-47ed-92a3-919da180a10d",
     "c0990a55-916e-47ba-b29a-aee83d9f33c9",
     "44cd783c-b33d-4553-89cd-2a73b59e1982",
+    "30302f7a-c470-47bf-8f0e-d104b3065d99",
 
 ]
 
@@ -54,16 +55,16 @@ GROUP_B = [
     "1d0afd8d-6945-488a-964c-724e95db6696",
     "1019fb0a-480d-4bef-b8f9-493b9dfe253b",
     "d2703a20-7b4a-4624-b31a-306eebe4caa0",
-    "30302f7a-c470-47bf-8f0e-d104b3065d99",
-
-]
-
-GROUP_C = [
     "f1856ef8-2fe0-480d-9635-cfc0be308458",
     "65ab3206-7371-4471-845c-6d238050494f",
     "89e4bf27-9a6f-45e8-a415-ef53f23f7931",
     "0a584ba1-cdf4-4251-9168-5f8ccc0240e3",
     "8dba1f55-9e79-4e62-90c3-02e9609d3feb",
+
+]
+
+GROUP_C = [
+
 ]
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -72,8 +73,8 @@ SCORE_COL = "combined_score"
 GMFCS_COL = "gmfcs_int"
 
 # Border colors used in combined plot to distinguish groups
-COLOR_A = "#2980b9"   # blue
-COLOR_B = "#e67e22"   # orange
+COLOR_A = "#2948b9"   # blue
+COLOR_B = "#e63622"   # red
 COLOR_C = "#27ae60"   # green
 
 GMFCS_COLORS = {
@@ -111,28 +112,28 @@ def split_into_groups(df: pd.DataFrame):
         ids_a   = [i for i in GROUP_A if i in all_ids]
         ids_b   = [i for i in GROUP_B if i in all_ids]
         ids_c   = [i for i in GROUP_C if i in all_ids]
-        label_a, label_b, label_c = "Group A", "Group B", "Group C"
+        label_a, label_b= "Group A", "Group B"#, "Group C"
     else:
         third   = len(all_ids) // 3
         ids_a   = all_ids[:third]
         ids_b   = all_ids[third:2*third]
-        ids_c   = all_ids[2*third:]
+        #ids_c   = all_ids[2*third:]
         label_a, label_b, label_c = "Part 1 (auto)", "Part 2 (auto)", "Part 3 (auto)"
 
     df_a = df[df["introductory_id"].isin(ids_a)]
     df_b = df[df["introductory_id"].isin(ids_b)]
-    df_c = df[df["introductory_id"].isin(ids_c)]
+   # df_c = df[df["introductory_id"].isin(ids_c)]
 
     print(f"  {label_a}: {df_a['introductory_id'].nunique()} participants")
     print(f"  {label_b}: {df_b['introductory_id'].nunique()} participants")
-    print(f"  {label_c}: {df_c['introductory_id'].nunique()} participants")
+    #print(f"  {label_c}: {df_c['introductory_id'].nunique()} participants")
 
-    for group_ids, label in [(GROUP_A, label_a), (GROUP_B, label_b), (GROUP_C, label_c)]:
+    for group_ids, label in [(GROUP_A, label_a), (GROUP_B, label_b)]:
         missing = [i for i in group_ids if i not in all_ids]
         if missing:
             print(f"  ⚠️  {label} IDs not found in data: {missing}")
 
-    return df_a, df_b, df_c, label_a, label_b, label_c
+    return df_a, df_b, label_a, label_b
 
 
 # ─── Shared panel drawing helper ──────────────────────────────────────────────
@@ -246,14 +247,13 @@ def plot_individual_trajectories(
 # ─── Combined plot (all three groups, colored borders) ────────────────────────
 
 def plot_combined_groups(
-    df_a, df_b, df_c,
-    label_a, label_b, label_c,
+    df_a, df_b,
+    label_a, label_b,
     filename, y_min, y_max, all_ages,
 ):
     ids_a  = set(df_a["introductory_id"].unique())
     ids_b  = set(df_b["introductory_id"].unique())
-    ids_c  = set(df_c["introductory_id"].unique())
-    df_all = pd.concat([df_a, df_b, df_c])
+    df_all = pd.concat([df_a, df_b])
     ids    = sorted(df_all["introductory_id"].unique())
     n      = len(ids)
 
@@ -261,12 +261,14 @@ def plot_combined_groups(
         print("  No participants to plot.")
         return
 
-    border_map    = {**{i: COLOR_A for i in ids_a},
-                     **{i: COLOR_B for i in ids_b},
-                     **{i: COLOR_C for i in ids_c}}
-    group_tag_map = {**{i: "[A]" for i in ids_a},
-                     **{i: "[B]" for i in ids_b},
-                     **{i: "[C]" for i in ids_c}}
+    border_map = {
+        **{i: COLOR_A for i in ids_a},
+        **{i: COLOR_B for i in ids_b},
+    }
+    group_tag_map = {
+        **{i: "[A]" for i in ids_a},
+        **{i: "[B]" for i in ids_b},
+    }
 
     n_cols = min(4, n)
     n_rows = (n + n_cols - 1) // n_cols
@@ -280,10 +282,12 @@ def plot_combined_groups(
         color = GMFCS_COLORS.get(int(gmfcs), "#555555") if pd.notna(gmfcs) else "#555555"
         gmfcs_label = f"  GMFCS {int(gmfcs)}" if pd.notna(gmfcs) else ""
         tag   = group_tag_map.get(pid, "")
-        _draw_panel(ax, pid, group, all_ages, y_min, y_max,
-                    line_color=color,
-                    border_color=border_map.get(pid),
-                    title=f"{tag} {pid[:8]}…{gmfcs_label}")
+        _draw_panel(
+            ax, pid, group, all_ages, y_min, y_max,
+            line_color=color,
+            border_color=border_map.get(pid),
+            title=f"{tag} {pid[:8]}…{gmfcs_label}"
+        )
 
     for j in range(n, n_rows * n_cols):
         axes[j // n_cols][j % n_cols].set_visible(False)
@@ -292,15 +296,19 @@ def plot_combined_groups(
     group_elements = [
         plt.Line2D([0], [0], color=COLOR_A, linewidth=3, label=f"Border = {label_a}"),
         plt.Line2D([0], [0], color=COLOR_B, linewidth=3, label=f"Border = {label_b}"),
-        plt.Line2D([0], [0], color=COLOR_C, linewidth=3, label=f"Border = {label_c}"),
     ]
-    fig.legend(handles=gmfcs_elements + group_elements,
-               loc="lower center", ncol=len(gmfcs_elements) + 3,
-               fontsize=9, bbox_to_anchor=(0.5, 0))
+
+    fig.legend(
+        handles=gmfcs_elements + group_elements,
+        loc="lower center",
+        ncol=len(gmfcs_elements) + 2,
+        fontsize=9,
+        bbox_to_anchor=(0.5, 0)
+    )
     plt.subplots_adjust(bottom=0.06)
 
     fig.suptitle(
-        f"All Trajectories — {label_a} (blue) · {label_b} (orange) · {label_c} (green)  (n={n})",
+        f"All Trajectories — {label_a} (blue) · {label_b} (orange)  (n={n})",
         fontsize=13, y=1.01,
     )
     plt.tight_layout()
@@ -313,17 +321,17 @@ def plot_combined_groups(
 # ─── Group average plot ───────────────────────────────────────────────────────
 
 def plot_group_averages(
-    df_a, df_b, df_c,
-    label_a, label_b, label_c,
+    df_a, df_b,
+    label_a, label_b,
     filename, y_min, y_max, all_ages,
 ):
     """Mean ± SD trajectory for each group with faint individual lines."""
     fig, ax = plt.subplots(figsize=(9, 6))
 
     for df, color, label in [
-        (df_a, COLOR_A, label_a),
-        (df_b, COLOR_B, label_b),
-        (df_c, COLOR_C, label_c),
+        (df_a, COLOR_B, label_a),
+        (df_b, COLOR_A, label_b),
+        #(df_c, COLOR_C, label_c),
     ]:
         if df.empty:
             continue
@@ -358,7 +366,7 @@ def plot_group_averages(
     ax.set_xticklabels([f"Year {a}" for a in all_ages], fontsize=11)
     ax.set_ylabel(SCORE_COL.replace("_", " ").title(), fontsize=12)
     ax.set_ylim(y_min, y_max)
-    ax.set_title(f"Group Average Trajectories: {label_a} · {label_b} · {label_c}", fontsize=13)
+    ax.set_title(f"Group Average Trajectories: {label_a} · {label_b}", fontsize=13)
     ax.legend(fontsize=9)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -389,7 +397,7 @@ def main():
         return
 
     print("\n  Splitting into groups …")
-    df_a, df_b, df_c, label_a, label_b, label_c = split_into_groups(df)
+    df_a, df_b, label_a, label_b= split_into_groups(df)
 
     all_ages = sorted(df["age"].unique())
     y_min    = df[SCORE_COL].min() - 0.05
@@ -404,17 +412,17 @@ def main():
         filename="trajectories_group_b.png",
         y_min=y_min, y_max=y_max, all_ages=all_ages)
 
-    plot_individual_trajectories(df_c, label_c,
-        filename="trajectories_group_c.png",
-        y_min=y_min, y_max=y_max, all_ages=all_ages)
+   # plot_individual_trajectories(df_c, label_c,
+   #     filename="trajectories_group_c.png",
+   #     y_min=y_min, y_max=y_max, all_ages=all_ages)
 
     plot_combined_groups(
-        df_a, df_b, df_c, label_a, label_b, label_c,
+        df_a, df_b, label_a, label_b,
         filename="trajectories_combined.png",
         y_min=y_min, y_max=y_max, all_ages=all_ages)
 
     plot_group_averages(
-        df_a, df_b, df_c, label_a, label_b, label_c,
+        df_a, df_b,label_a, label_b,
         filename="trajectories_group_averages.png",
         y_min=y_min, y_max=y_max, all_ages=all_ages)
 
