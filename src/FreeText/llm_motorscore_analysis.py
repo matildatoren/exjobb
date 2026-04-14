@@ -2,7 +2,6 @@
 # This is not an objective clinical measure, but an LLM-derived summary score.
 
 from typing import List, Literal
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 import time
 
 import polars as pl
@@ -29,9 +28,6 @@ from dataloader import load_data
 
 MODEL_NAME = "gemma4:26b"
 
-CHAT_TIMEOUT_SECONDS = 60
-CHAT_MAX_RETRIES = 2
-
 INTRODUCTORY_IDS = [
     "c0990a55-916e-47ba-b29a-aee83d9f33c9",
     "65ab3206-7371-4471-845c-6d238050494f",
@@ -51,8 +47,9 @@ INTRODUCTORY_IDS = [
     "d2703a20-7b4a-4624-b31a-306eebe4caa0",
     "1d0afd8d-6945-488a-964c-724e95db6696",
     "f9231c8d-2ade-4c0e-a878-a9524ccc3d65",
-    "cd26a009-6e51-4372-b151-b7d2bb8b7183",
+     "cd26a009-6e51-4372-b151-b7d2bb8b7183",
     "df67e7ea-0b50-408b-9342-4c29d0efa839"
+
 ]
 
 OUTPUT_DIR = Path(__file__).resolve().parent / "outputs"
@@ -70,144 +67,10 @@ class MotorAssessment(BaseModel):
     motor_score_1_to_10: int
     confidence: Literal["low", "medium", "high"]
     summary: str
+    gross_motor_level: str
+    fine_motor_level: str
+    impairment_severity: str
     supporting_evidence: List[str]
-
-
-# ---------------------------
-# FEW-SHOT EXAMPLES
-# ---------------------------
-
-FEW_SHOT_EXAMPLES = [
-    # Example 1 — Score 10: all milestones, no impairments
-    {
-        "input": """Assess motor development for this record:
-
-[Motorical Development Record]
-
-Age: 4
-
-Gross motor development:
-{"milestones": [{"id": "rolls_both_directions"}, {"id": "pushes_up_straight_elbows"}, {"id": "sits_independently"}, {"id": "crawls_or_scoots"}, {"id": "stands_with_support"}, {"id": "pulls_to_stand_cruises"}, {"id": "first_independent_steps"}, {"id": "climbs_stairs_hands_knees"}, {"id": "squats_and_stands"}, {"id": "runs_and_climbs_furniture"}, {"id": "jumps_both_feet"}, {"id": "walks_stairs_one_foot_per_step"}, {"id": "balances_one_foot_briefly"}, {"id": "pedals_tricycle_hops"}, {"id": "throws_overhand_skips_hops"}, {"id": "balances_one_foot_5_seconds"}, {"id": "rides_bike_training_wheels"}, {"id": "hops_forward_rides_two_wheel_bike"}, {"id": "hops_jumps_confidently_10_seconds"}, {"id": "jumps_rope_sports"}, {"id": "runs_smoothly_throws_catches"}]}
-
-Fine motor development:
-{"milestones": [{"id": "reaches_grasps_both_hands"}, {"id": "transfers_hand_to_hand"}, {"id": "bangs_objects_points"}, {"id": "pincer_grasp"}, {"id": "places_in_containers_self_feeds_fingers"}, {"id": "turns_pages_several"}, {"id": "stacks_blocks_uses_spoon"}, {"id": "scribbles_stacks_6_8_blocks"}, {"id": "copies_lines_circles_spoon_fork"}, {"id": "turns_single_pages_copies_crosses"}, {"id": "scissors_large_buttons"}, {"id": "draws_simple_person"}, {"id": "copies_squares_attempts_letters"}, {"id": "fork_spoon_pencil_grasp"}]}
-
-Motorical impairments (lower):
-{"details": {}}
-
-Motorical impairments (upper):
-{"details": {}}
-
-Story:
-The child's motor development has consistently been at or above the expected level for their age. No motor concerns have been raised by parents, physiotherapists, or preschool staff. The child participates fully in all physical activities with peers, including running games, climbing, and ball sports.""",
-
-        "output": '{"motor_score_1_to_10": 10, "confidence": "high", "summary": "The child has achieved all 21 gross motor and all 14 age-appropriate fine motor milestones, with no lower or upper body impairments reported. Motor function is fully intact and consistent with the highest functional level.", "supporting_evidence": ["All 21 gross motor milestones achieved, including advanced skills: jumping rope, riding a two-wheeled bike, and accurate throwing and catching", "All 14 age-appropriate fine motor milestones achieved, including correct pencil grasp, scissor use, and copying letters and squares", "No lower-body impairments reported", "No upper-body impairments reported", "Story confirms typical or above-average motor development with no professional concerns"]}',
-    },
-
-    # Example 2 — Score 1: no milestones, maximum impairments
-    {
-        "input": """Assess motor development for this record:
-
-[Motorical Development Record]
-
-Age: 4
-
-Gross motor development:
-{"milestones": []}
-
-Fine motor development:
-{"milestones": []}
-
-Motorical impairments (lower):
-{"details": {"spasticity": 5, "muscle_weakness": 5, "range_of_motion": 5}}
-
-Motorical impairments (upper):
-{"details": {"spasticity": 5, "muscle_weakness": 5, "coordination": 5}}
-
-Story:
-Barnet har spastisk tetrapares och är helt beroende av omvårdnad för alla förflyttningar och aktiviteter. Inga funktionella motoriska färdigheter har utvecklats. Barnet kan inte sitta utan stöd och har aldrig stått eller gått. Finmotoriken är extremt begränsad – inget grepp, ingen pekförmåga och inget självständigt hanterande av föremål. Intensiv habilitering pågår utan tydlig funktionell framgång hittills.""",
-
-        "output": '{"motor_score_1_to_10": 1, "confidence": "high", "summary": "The child has achieved no gross or fine motor milestones at age 4, and presents with all lower and upper body impairment dimensions at maximum severity. Motor function is critically impaired with complete dependence on caregivers for all activities.", "supporting_evidence": ["No gross motor milestones achieved — child cannot roll, sit, stand, or walk", "No fine motor milestones achieved — no functional grasping, pointing, or object handling", "Lower-body impairments at maximum severity: spasticity 5/5, muscle weakness 5/5, range of motion 5/5", "Upper-body impairments at maximum severity: spasticity 5/5, muscle weakness 5/5, coordination 5/5", "Story confirms spastic tetraparesis with complete care dependence and no functional motor progress"]}',
-    },
-
-    # Example 3 — Score 7: good milestones, mild impairments
-    {
-        "input": """Assess motor development for this record:
-
-[Motorical Development Record]
-
-Age: 3
-
-Gross motor development:
-{"milestones": [{"id": "rolls_both_directions"}, {"id": "pushes_up_straight_elbows"}, {"id": "sits_independently"}, {"id": "crawls_or_scoots"}, {"id": "stands_with_support"}, {"id": "pulls_to_stand_cruises"}, {"id": "first_independent_steps"}, {"id": "climbs_stairs_hands_knees"}, {"id": "squats_and_stands"}, {"id": "runs_and_climbs_furniture"}, {"id": "jumps_both_feet"}, {"id": "walks_stairs_one_foot_per_step"}]}
-
-Fine motor development:
-{"milestones": [{"id": "reaches_grasps_both_hands"}, {"id": "transfers_hand_to_hand"}, {"id": "bangs_objects_points"}, {"id": "pincer_grasp"}, {"id": "places_in_containers_self_feeds_fingers"}, {"id": "turns_pages_several"}, {"id": "stacks_blocks_uses_spoon"}, {"id": "scribbles_stacks_6_8_blocks"}, {"id": "copies_lines_circles_spoon_fork"}]}
-
-Motorical impairments (lower):
-{"details": {"spasticity": 2, "muscle_weakness": 1}}
-
-Motorical impairments (upper):
-{"details": {"coordination": 2}}
-
-Story:
-Dziecko chodzi i biega samodzielnie, choć widoczna jest lekka sztywność w lewej nodze podczas szybkiego chodu. Wchodzi po schodach trzymając się poręczy. Zabawa z rówieśnikami przebiega dobrze, dziecko uczestniczy w większości aktywności fizycznych. Terapia fizyczna raz w tygodniu.""",
-
-        "output": '{"motor_score_1_to_10": 7, "confidence": "high", "summary": "The child walks and runs independently and has achieved most gross and fine motor milestones expected at age 3. Mild lower-limb spasticity and mild coordination difficulties are present but do not substantially limit daily function.", "supporting_evidence": ["12 out of the most advanced age-3 gross motor milestones achieved, including running, jumping with both feet, and stair walking", "9 fine motor milestones achieved through copying lines and circles — developmentally appropriate for age 3", "Mild lower-body spasticity (2/5) and minimal muscle weakness (1/5) — functional ambulation maintained", "Mild upper-body coordination difficulty (2/5) — fine motor tasks largely intact", "Story confirms independent walking and running with mild stiffness in one leg; attends physical therapy once weekly"]}',
-    },
-
-    # Example 4 — Score 4: limited milestones, moderate impairments
-    {
-        "input": """Assess motor development for this record:
-
-[Motorical Development Record]
-
-Age: 3
-
-Gross motor development:
-{"milestones": [{"id": "rolls_both_directions"}, {"id": "sits_independently"}, {"id": "stands_with_support"}, {"id": "pulls_to_stand_cruises"}, {"id": "first_independent_steps"}]}
-
-Fine motor development:
-{"milestones": [{"id": "reaches_grasps_both_hands"}, {"id": "transfers_hand_to_hand"}, {"id": "pincer_grasp"}, {"id": "places_in_containers_self_feeds_fingers"}]}
-
-Motorical impairments (lower):
-{"details": {"spasticity": 4, "muscle_weakness": 3, "range_of_motion": 3}}
-
-Motorical impairments (upper):
-{"details": {"spasticity": 3, "muscle_weakness": 3, "coordination": 4}}
-
-Story:
-Barnet tar några steg inomhus men behöver rollator för längre sträckor och utomhus. Klarar inte att springa, hoppa eller gå i trappor utan hjälp. Finmotoriken är påtagligt begränsad – kan ta föremål men har svårt med precision och bilaterala uppgifter. Behöver assistans vid de flesta ADL-moment. Går på habilitering två gånger i veckan.""",
-
-        "output": '{"motor_score_1_to_10": 4, "confidence": "high", "summary": "The child has achieved only basic early gross motor milestones and a limited set of fine motor skills. Moderate-to-high lower-limb spasticity and moderate upper-body impairments significantly restrict independence, with reliance on a walker for longer distances.", "supporting_evidence": ["Only 5 gross motor milestones achieved — walking indoors without device possible but limited; running, jumping, and stair use not achieved", "Only 4 early fine motor milestones achieved — grasping and pincer present but precision and bilateral tasks impaired", "Lower-body impairments at moderate-to-high severity: spasticity 4/5, muscle weakness 3/5, range of motion 3/5", "Upper-body impairments at moderate severity: spasticity 3/5, muscle weakness 3/5, coordination 4/5", "Story confirms walker-dependent mobility outdoors and significant assistance needed for most daily activities"]}',
-    },
-
-    # Example 5 — Score 2: almost no milestones, severe impairments
-    {
-        "input": """Assess motor development for this record:
-
-[Motorical Development Record]
-
-Age: 2
-
-Gross motor development:
-{"milestones": [{"id": "rolls_both_directions"}]}
-
-Fine motor development:
-{"milestones": [{"id": "reaches_grasps_both_hands"}]}
-
-Motorical impairments (lower):
-{"details": {"spasticity": 5, "muscle_weakness": 4, "range_of_motion": 4}}
-
-Motorical impairments (upper):
-{"details": {"spasticity": 4, "muscle_weakness": 4, "coordination": 5}}
-
-Story:
-The child cannot sit without support and has not developed any form of independent mobility. All positioning and transfers require full caregiver assistance. Reaching for objects is inconsistent and poorly controlled. Intensive physiotherapy and occupational therapy are ongoing.""",
-
-        "output": '{"motor_score_1_to_10": 2, "confidence": "high", "summary": "The child has achieved only the most rudimentary gross and fine motor milestones at age 2, with severe lower and upper body impairments across all measured dimensions. Almost entirely dependent on caregivers for all motor activities.", "supporting_evidence": ["Only 1 gross motor milestone achieved (rolling) — no sitting, standing, or walking", "Only 1 fine motor milestone achieved (inconsistent reaching) — no transfer, pincer grasp, or self-feeding", "Lower-body impairments at high severity: spasticity 5/5, muscle weakness 4/5, range of motion 4/5", "Upper-body impairments at high severity: spasticity 4/5, muscle weakness 4/5, coordination 5/5", "Story confirms complete positional dependence and poorly controlled voluntary movement"]}',
-    },
-]
 
 
 # ---------------------------
@@ -237,7 +100,6 @@ def clean_text(value: object) -> str | None:
 
     return text
 
-
 def extract_json_content(text: str) -> str:
     """
     Remove markdown code fences if the model wraps the JSON output
@@ -260,7 +122,6 @@ def extract_json_content(text: str) -> str:
         text = text.removesuffix("```").strip()
 
     return text
-
 
 def repair_json_text(text: str) -> str:
     """
@@ -353,7 +214,6 @@ Story:
 def analyze_md_row(text: str, model_name: str = MODEL_NAME) -> MotorAssessment:
     """
     Analyze one motorical development record with the LLM.
-    Retries up to CHAT_MAX_RETRIES times on timeout.
 
     Args:
         text (str): Formatted input text for one record.
@@ -361,9 +221,6 @@ def analyze_md_row(text: str, model_name: str = MODEL_NAME) -> MotorAssessment:
 
     Returns:
         MotorAssessment: Structured LLM assessment.
-
-    Raises:
-        RuntimeError: If all retry attempts time out.
     """
     system_prompt = """
 You are evaluating motor development in children with cerebral palsy based on structured survey data.
@@ -382,6 +239,9 @@ IMPORTANT:
   - motor_score_1_to_10
   - confidence
   - summary
+  - gross_motor_level
+  - fine_motor_level
+  - impairment_severity
   - supporting_evidence
 
 SCALE GUIDELINES:
@@ -401,49 +261,26 @@ FIELD REQUIREMENTS:
 - supporting_evidence: list of short English strings
 
 LANGUAGE:
-- Input may be multilingual (Swedish, English, Polish).
+- Input may be multilingual.
 - Output MUST be in English.
 
 Return ONLY valid JSON matching the required field names exactly.
 """
 
-    user_prompt = f"""Assess motor development for this record:
+    user_prompt = f"""
+Assess motor development for this record:
 
-{text}"""
+{text}
+"""
 
-    # Build messages list: system prompt → few-shot pairs → real user prompt
-    messages = [{"role": "system", "content": system_prompt}]
-
-    for example in FEW_SHOT_EXAMPLES:
-        messages.append({"role": "user", "content": example["input"]})
-        messages.append({"role": "assistant", "content": example["output"]})
-
-    messages.append({"role": "user", "content": user_prompt})
-
-    def _call_llm():
-        return chat(
-            model=model_name,
-            messages=messages,
-            format=MotorAssessment.model_json_schema(),
-            options={"num_predict": 512},
-        )
-
-    for attempt in range(CHAT_MAX_RETRIES + 1):
-        try:
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(_call_llm)
-                response = future.result(timeout=CHAT_TIMEOUT_SECONDS)
-            break  # succeeded
-        except FuturesTimeoutError:
-            print(
-                f"    Timeout på försök {attempt + 1}/{CHAT_MAX_RETRIES + 1} "
-                f"({CHAT_TIMEOUT_SECONDS}s), försöker igen..."
-            )
-            if attempt == CHAT_MAX_RETRIES:
-                raise RuntimeError(
-                    f"LLM timeout efter {CHAT_MAX_RETRIES + 1} försök "
-                    f"({CHAT_TIMEOUT_SECONDS}s per försök)"
-                )
+    response = chat(
+        model=model_name,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        format=MotorAssessment.model_json_schema(),
+    )
 
     cleaned_response = extract_json_content(response.message.content)
     repaired_response = repair_json_text(cleaned_response)
@@ -459,8 +296,6 @@ Return ONLY valid JSON matching the required field names exactly.
         print("\nNormalized output:")
         print(normalized_response)
         raise
-
-
 # ---------------------------
 # ANALYZE ONE CHILD
 # ---------------------------
@@ -487,30 +322,23 @@ def analyze_child(df: pl.DataFrame, introductory_id: str) -> list[dict]:
     child_results = []
 
     for row in df_child.iter_rows(named=True):
-        age = row.get("age")
         row_start_time = time.perf_counter()
 
         text_input = build_md_input(row)
-        print(f"    Skickar input för age {age} ({len(text_input)} tecken)...")
-
-        try:
-            result = analyze_md_row(text_input)
-        except RuntimeError as e:
-            print(f"    Age {age} HOPPADES ÖVER: {e}")
-            continue
-        except Exception as e:
-            print(f"    Age {age} FEL (oväntat): {e}")
-            continue
+        result = analyze_md_row(text_input)
 
         row_elapsed_time = time.perf_counter() - row_start_time
-        print(f"    Age {age} done in {row_elapsed_time:.2f} seconds.")
+        print(f"    Age {row.get('age')} done in {row_elapsed_time:.2f} seconds.")
 
         child_results.append({
             "introductory_id": row.get("introductory_id"),
-            "age": age,
+            "age": row.get("age"),
             "llm_motor_score": result.motor_score_1_to_10,
             "confidence": result.confidence,
             "summary": result.summary,
+            "gross_motor_level": result.gross_motor_level,
+            "fine_motor_level": result.fine_motor_level,
+            "impairment_severity": result.impairment_severity,
             "supporting_evidence": " | ".join(result.supporting_evidence),
         })
 
@@ -551,6 +379,9 @@ def write_text_report(
             lines.append(f"Age: {row['age']}")
             lines.append(f"LLM motor score: {row['llm_motor_score']}")
             lines.append(f"Confidence: {row['confidence']}")
+            lines.append(f"Gross motor level: {row['gross_motor_level']}")
+            lines.append(f"Fine motor level: {row['fine_motor_level']}")
+            lines.append(f"Impairment severity: {row['impairment_severity']}")
             lines.append(f"Summary: {row['summary']}")
             lines.append(f"Supporting evidence: {row['supporting_evidence']}")
             lines.append("-" * 80)
