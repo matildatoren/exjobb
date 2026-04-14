@@ -55,6 +55,30 @@ IMAGES_DIR.mkdir(exist_ok=True)
 #    15. delta_combined_score
 #    16. delta_motorical_score
 
+FILTER_INTRODUCTORY_IDS = [
+        "c0990a55-916e-47ba-b29a-aee83d9f33c9",
+        "65ab3206-7371-4471-845c-6d238050494f",
+        "c8f4ec50-18b6-47ed-92a3-919da180a10d",
+        "8dba1f55-9e79-4e62-90c3-02e9609d3feb",
+        "f1856ef8-2fe0-480d-9635-cfc0be308458",
+        "771d12c3-bc1a-4a97-ad27-00d35b24f87e",
+        "1019fb0a-480d-4bef-b8f9-493b9dfe253b",
+        "6e7aeec2-2846-433d-a4ac-0e753da08530",
+        "e30d335e-3a7a-484d-951d-f8e3f17ccfb3",
+        "578adb11-a12f-4121-a567-afe67c25640b",
+        "0a584ba1-cdf4-4251-9168-5f8ccc0240e3",
+        "7e42b31a-c597-4418-9bf6-a8c3286d049f",
+        "89e4bf27-9a6f-45e8-a415-ef53f23f7931",
+        "16f3f961-07a2-4099-8498-1bad9c2faa19",
+        "44cd783c-b33d-4553-89cd-2a73b59e1982",
+        "d2703a20-7b4a-4624-b31a-306eebe4caa0",
+        "1d0afd8d-6945-488a-964c-724e95db6696",
+        "f9231c8d-2ade-4c0e-a878-a9524ccc3d65",
+        "cd26a009-6e51-4372-b151-b7d2bb8b7183",
+        "df67e7ea-0b50-408b-9342-4c29d0efa839",
+        "30302f7a-c470-47bf-8f0e-d104b3065d99",
+]
+
 TARGET = "delta_motorical_score"
 TRAINING_FEATURES = [
     #"age",
@@ -104,17 +128,16 @@ def build_dataset(master: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series, str | 
     # convert to pandas
     df = master.to_pandas()
 
+    # Filter to specific introductory IDs if list is non-empty
+    if FILTER_INTRODUCTORY_IDS:
+        df = df[df["introductory_id"].isin(FILTER_INTRODUCTORY_IDS)]
+        print(f"  Filtered to {len(df)} rows for {len(FILTER_INTRODUCTORY_IDS)} introductory IDs")
+
     # keep only rows where the target exists
     df = df[feature_cols + [TARGET]].dropna(subset=[TARGET])
 
     # fill remaining NaN in features with 0
     df[feature_cols] = df[feature_cols].fillna(0)
-
-    # Filters
-    # df = df[
-    #     (df[TARGET] != 0) &                          # remove zero outcome
-    #     (df[feature_cols].sum(axis=1) > 0)           # remove zero training
-    # ]
 
     X = df[feature_cols]
     y = df[TARGET]
