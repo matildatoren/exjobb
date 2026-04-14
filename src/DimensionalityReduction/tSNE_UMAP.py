@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 import re
-
+from sklearn.cluster import KMeans
 from pathlib import Path
 from sklearn.preprocessing import StandardScaler
 from sklearn.manifold import TSNE
@@ -19,6 +19,11 @@ GMFCS_COLORS = {
     "III": "orange",
     "IV":  "red",
     "V":   "purple",
+}
+
+CLUSTER_COLORS = {
+    0: "blue",
+    1: "red",
 }
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -89,10 +94,21 @@ def _add_gmfcs_legend(ax):
     ax.legend(handles=legend_elements, fontsize=7, loc="lower right")
 
 
-def _scatter_panel(ax, X_2d, ids, gmfcs, title, xlabel, ylabel):
+def _add_cluster_legend(ax):
+    legend_elements = [
+        Patch(facecolor="blue", label="Cluster 1"),
+        Patch(facecolor="red", label="Cluster 2"),
+    ]
+    ax.legend(handles=legend_elements, fontsize=7, loc="center left", bbox_to_anchor=(1.02, 0.5))
+
+def _scatter_panel(ax, X_2d, ids, gmfcs, title, xlabel, ylabel, cluster_labels=None):
     for i, child_id in enumerate(ids):
-        gmfcs_lvl = gmfcs.get(child_id, None)
-        color     = _gmfcs_color(gmfcs_lvl)
+        if cluster_labels is None:
+            gmfcs_lvl = gmfcs.get(child_id, None)
+            color = _gmfcs_color(gmfcs_lvl)
+        else:
+            color = CLUSTER_COLORS[cluster_labels[i]]
+
         ax.scatter(X_2d[i, 0], X_2d[i, 1], color=color, s=100, zorder=3)
         ax.annotate(str(child_id)[:8], (X_2d[i, 0], X_2d[i, 1]), fontsize=7, ha="left", va="bottom")
 
@@ -101,7 +117,11 @@ def _scatter_panel(ax, X_2d, ids, gmfcs, title, xlabel, ylabel):
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.set_title(title)
-    _add_gmfcs_legend(ax)
+
+    if cluster_labels is None:
+        _add_gmfcs_legend(ax)
+    else:
+        _add_cluster_legend(ax)
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -167,11 +187,6 @@ def build_combined_trajectory(
     combined_df: pl.DataFrame,
     ages: list[int] = [1, 2, 3, 4],
 ) -> pd.DataFrame:
-    """
-    Wide format: one row per child, one column per age
-    (combined_age1, combined_age2, ...).
-    Missing ages imputed with child's own mean.
-    """
     combined_df = _apply_filter(combined_df)
     all_ids = combined_df["introductory_id"].unique().to_list()
     rows = {}
@@ -201,6 +216,7 @@ def run_tsne_umap(
     filename: str,
     perplexity: int = 5,
     n_neighbors: int = 5,
+    color_by_cluster: bool = False,
 ):
     n = len(feature_df)
     perplexity  = min(perplexity,  n - 1)
@@ -217,6 +233,12 @@ def run_tsne_umap(
     reducer = umap.UMAP(n_components=2, n_neighbors=n_neighbors, random_state=42)
     X_umap  = reducer.fit_transform(X_scaled)
 
+    cluster_labels = None
+
+    if color_by_cluster:
+        kmeans = KMeans(n_clusters=2, random_state=42, n_init=10)
+        cluster_labels = kmeans.fit_predict(X_scaled)
+
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
 
     _scatter_panel(
@@ -224,12 +246,14 @@ def run_tsne_umap(
         title  = f"t-SNE (perplexity={perplexity})",
         xlabel = "Dim 1",
         ylabel = "Dim 2",
+        cluster_labels=cluster_labels,
     )
     _scatter_panel(
         axes[1], X_umap, ids, gmfcs,
         title  = f"UMAP (n_neighbors={n_neighbors})",
         xlabel = "Dim 1",
         ylabel = "Dim 2",
+        cluster_labels=cluster_labels,
     )
 
     plt.suptitle(suptitle, fontsize=13)
@@ -270,22 +294,16 @@ if __name__ == "__main__":
         training_df, gmfcs,
         suptitle = "t-SNE & UMAP — Träningsprofil per barn",
         filename = "tsne_umap_training.png",
-    )
-
-    # ── Motor trajectory (milestone + impairment) ─────────────────────────────
-    motor_df = build_motor_trajectory(milestone_df, impairment_df)
-    run_tsne_umap(
-        motor_df, gmfcs,
-        suptitle = "t-SNE & UMAP — Motorisk trajektorie per barn",
-        filename = "tsne_umap_motor.png",
+        color_by_cluster = True,
     )
 
     # ── Combined score trajectory ─────────────────────────────────────────────
     combined_traj_df = build_combined_trajectory(combined_df)
     run_tsne_umap(
         combined_traj_df, gmfcs,
-        suptitle = "t-SNE & UMAP — Combined score trajektorie per barn",
+        suptitle = "t-SNE & UMAP — Motorical trajectory per child (combined score)",
         filename = "tsne_umap_combined.png",
+        color_by_cluster = True,
     )
 
     plt.show()
