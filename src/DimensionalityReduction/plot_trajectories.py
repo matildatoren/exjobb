@@ -54,6 +54,8 @@ GROUP_B = [
     "1d0afd8d-6945-488a-964c-724e95db6696",
     "1019fb0a-480d-4bef-b8f9-493b9dfe253b",
     "d2703a20-7b4a-4624-b31a-306eebe4caa0",
+    "30302f7a-c470-47bf-8f0e-d104b3065d99",
+
 ]
 
 GROUP_C = [
