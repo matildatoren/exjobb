@@ -67,7 +67,7 @@ FILTER_IDS = [
 ANALYSES = [
     {
         "cols":     ["delta_milestone_score_setvalue", "delta_impairment_score_setvalue"],
-        "ages":     [1, 2, 3, 4],
+        "ages":     [2, 3, 4],
         "title":    "PCA — Δ Milestone + Δ Impairment score (setvalue)",
         "filename": "pca_delta_setvalue.png",
     },
@@ -78,16 +78,40 @@ ANALYSES = [
         "filename": "pca_scores_setvalue.png",
     },
     {
-        "cols":     ["log_total_home_training_hours", "log_neurohab_hours", "log_total_other_training_hours"],
-        "ages":     [1, 2, 3, 4],
-        "title":    "PCA — Träningsprofil per barn",
-        "filename": "pca_training.png",
-    },
-    {
         "cols":     ["combined_score_setvalue"],
         "ages":     [1, 2, 3, 4],
         "title":    "PCA — Combined score trajectory (setvalue)",
         "filename": "pca_combined.png",
+    },
+    {
+        "cols":     ["delta_combined_score_setvalue"],
+        "ages":     [ 2, 3, 4],
+        "title":    "PCA — Δ Combined score trajectory (setvalue)",
+        "filename": "pca_delta_combined.png",
+    },
+    {
+        "cols":     ["milestone_score_setvalue"],
+        "ages":     [1, 2, 3, 4],
+        "title":    "PCA — Milestone score (setvalue)",
+        "filename": "pca_milestone_scores_setvalue.png",
+    },
+    {
+        "cols":     ["delta_milestone_score_setvalue"],
+        "ages":     [2, 3, 4],
+        "title":    "PCA — Δ Milestone score (setvalue)",
+        "filename": "pca_delta_milestone_scores_setvalue.png",
+    },
+    {
+        "cols":     ["impairment_score_setvalue"],
+        "ages":     [1, 2, 3, 4],
+        "title":    "PCA — Impairment score (setvalue)",
+        "filename": "pca_impairment_scores_setvalue.png",
+    },
+    {
+        "cols":     ["delta_impairment_score_setvalue"],
+        "ages":     [ 2, 3, 4],
+        "title":    "PCA — Δ Impairment score (setvalue)",
+        "filename": "pca_delta_impairment_scores_setvalue.png",
     },
 ]
 

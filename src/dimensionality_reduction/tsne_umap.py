@@ -87,23 +87,9 @@ FILTER_IDS = [
 ANALYSES = [
     {
         "cols":       ["delta_milestone_score_setvalue", "delta_impairment_score_setvalue"],
-        "ages":       [1, 2, 3, 4],
+        "ages":       [2, 3, 4],
         "title":      "t-SNE & UMAP — Δ Milestone + Δ Impairment score (setvalue)",
         "filename":   "tsne_umap_delta_setvalue.png",
-        "n_clusters": 2,
-    },
-    {
-        "cols":       ["delta_milestone_score_setvalue"],
-        "ages":       [1, 2, 3, 4],
-        "title":      "t-SNE & UMAP — Δ Milestone score (setvalue)",
-        "filename":   "tsne_umap_delta_milestone_setvalue.png",
-        "n_clusters": 2,
-    },
-    {
-        "cols":       ["delta_impairment_score_setvalue"],
-        "ages":       [1, 2, 3, 4],
-        "title":      "t-SNE & UMAP — Δ Impairment score (setvalue)",
-        "filename":   "tsne_umap_delta_impairment_setvalue.png",
         "n_clusters": 2,
     },
     {
@@ -114,10 +100,31 @@ ANALYSES = [
         "n_clusters": 2,
     },
     {
-        "cols":       ["log_total_home_training_hours", "log_neurohab_hours", "log_total_other_training_hours"],
+        "cols":       ["delta_milestone_score_setvalue"],
+        "ages":       [2, 3, 4],
+        "title":      "t-SNE & UMAP — Δ Milestone score (setvalue)",
+        "filename":   "tsne_umap_delta_milestone_setvalue.png",
+        "n_clusters": 2,
+    },
+    {
+        "cols":       ["milestone_score_setvalue"],
         "ages":       [1, 2, 3, 4],
-        "title":      "t-SNE & UMAP — Träningsprofil per barn",
-        "filename":   "tsne_umap_training.png",
+        "title":      "t-SNE & UMAP — Milestone score (setvalue)",
+        "filename":   "tsne_umap_milestone_setvalue.png",
+        "n_clusters": 2,
+    },
+    {
+        "cols":       ["delta_impairment_score_setvalue"],
+        "ages":       [2, 3, 4],
+        "title":      "t-SNE & UMAP — Δ Impairment score (setvalue)",
+        "filename":   "tsne_umap_delta_impairment_setvalue.png",
+        "n_clusters": 2,
+    },
+    {
+        "cols":       ["impairment_score_setvalue"],
+        "ages":       [1, 2, 3, 4],
+        "title":      "t-SNE & UMAP — Impairment score (setvalue)",
+        "filename":   "tsne_umap_impairment_setvalue.png",
         "n_clusters": 2,
     },
     {
@@ -125,6 +132,13 @@ ANALYSES = [
         "ages":       [1, 2, 3, 4],
         "title":      "t-SNE & UMAP — Combined score trajectory (setvalue)",
         "filename":   "tsne_umap_combined.png",
+        "n_clusters": 2,
+    },
+        {
+        "cols":       ["delta_combined_score_setvalue"],
+        "ages":       [2, 3, 4],
+        "title":      "t-SNE & UMAP — Δ Combined score trajectory (setvalue)",
+        "filename":   "tsne_umap_delta_combined.png",
         "n_clusters": 2,
     },
 ]
