@@ -26,6 +26,8 @@ from preprocessing.motor_scores import (
     motorscore_milestones,
     motorscore_impairments,
     motorscore_combined,
+    motorscore_impairments_presence_severity,
+
 )
 from preprocessing.training_categories import (
     build_category_hours_table,
@@ -218,6 +220,15 @@ def _build_motor_table(motorical_dev: pl.DataFrame, introductory: pl.DataFrame) 
             pl.col("mms_normalized").alias("impairment_score"),
         ])
     )
+
+    ps = (
+    motorscore_impairments_presence_severity(motorical_dev, introductory)
+    .select([
+        "introductory_id", "age",
+        "presence_score",
+        "severity_score",
+    ])
+    )
  
     # ── join all scores ─────────────────────────────────────────────────────
     motor = (
@@ -226,6 +237,7 @@ def _build_motor_table(motorical_dev: pl.DataFrame, introductory: pl.DataFrame) 
         .join(imp_set,  on=["introductory_id", "age"], how="left")
         .join(imp_norm, on=["introductory_id", "age"], how="left")
         .join(score1,    on=["introductory_id", "age"], how="left")
+        .join(ps, on=["introductory_id", "age"], how="left")
         .sort(["introductory_id", "age"])
     )
 
@@ -254,7 +266,9 @@ def _build_motor_table(motorical_dev: pl.DataFrame, introductory: pl.DataFrame) 
         "impairment_score",
         "combined_score_setvalue",
         "combined_score",
-        "motorical_score",  
+        "motorical_score", 
+        "presence_score",
+        "severity_score", 
     ]
 
     motor = motor.with_columns([
@@ -346,7 +360,6 @@ def build_master_feature_table(data: dict[str, pl.DataFrame]) -> pl.DataFrame:
         .join(device_binary_df, on=["introductory_id", "age"], how="left")
         .join(medical_df,       on=["introductory_id", "age"], how="left")
         .join(category_hours_df, on=["introductory_id", "age"], how="left")
-        .fill_null(0)
         # ── log1p-transformed hours ───────────────────────────────────────────
         .with_columns([
             (pl.col("total_home_training_hours") + 1).log(base=2.718281828).alias("log_total_home_training_hours"),
@@ -362,7 +375,21 @@ def build_master_feature_table(data: dict[str, pl.DataFrame]) -> pl.DataFrame:
         ])
         .sort(["introductory_id", "age"])
     )
- 
+
+    # ── Fill only training/binary cols with 0, leave scores as None ─────────
+    _SCORE_PREFIXES = (
+        "milestone_score", "impairment_score", "combined_score",
+        "presence_score", "severity_score",
+        "mms", "delta_", "motorical_score", "gmfcs_int",
+    )
+    fill_cols = [
+        c for c in result.columns
+        if not any(c.startswith(p) for p in _SCORE_PREFIXES)
+        and result[c].dtype in (pl.Float64, pl.Int64, pl.Int32, pl.Float32)
+    ]
+    result = result.with_columns([
+        pl.col(c).fill_null(0) for c in fill_cols
+    ])
     return result
 
 

@@ -133,6 +133,92 @@ def _cumulate_milestones(per_age: pl.DataFrame) -> pl.DataFrame:
 # Scores normalised over a fixed "unlocked" ceiling (set value)
 # ════════════════════════════════════════════════════════════════════════════
 
+def motorscore_impairments_presence_severity(
+    df: pl.DataFrame,
+    introductory_df: pl.DataFrame,
+    upper_col: str = "motorical_impairments_upper",
+    lower_col: str = "motorical_impairments_lower",
+) -> pl.DataFrame:
+    """
+    Returnerar två separata scores per (introductory_id, age):
+
+      presence_score = 1 - (n_selected / n_total)
+        → 1 = inga nedsättningar, 0 = alla möjliga nedsättningar finns
+
+      severity_score = 1 - ((mean_rating - 1) / 4)
+        → 1 = alla nedsättningar milda (rating=1), 0 = alla maximalt svåra (rating=5)
+        → None om inga nedsättningar rapporterades (n_selected = 0)
+    """
+    row_sum_ratings: list[float] = []
+    row_n_selected: list[int] = []
+
+    for u, lo in zip(df[upper_col].to_list(), df[lower_col].to_list()):
+        row_sum_ratings.append(sum_impairments(u) + sum_impairments(lo))
+        row_n_selected.append(count_impairments(u) + count_impairments(lo))
+
+    per_age = (
+        df.with_columns([
+            pl.Series("_sum_ratings", row_sum_ratings),
+            pl.Series("_n_selected",  row_n_selected),
+        ])
+        .group_by(["introductory_id", "age"])
+        .agg([
+            pl.col("_sum_ratings").mean().alias("sum_ratings"),
+            pl.col("_n_selected").mean().alias("n_selected"),
+        ])
+        .sort(["introductory_id", "age"])
+    )
+
+    gmfcs = _gmfcs_lookup(introductory_df)
+
+    presence_list: list[float] = []
+    severity_list: list[float | None] = []
+
+    for uid, age, s, n_sel in zip(
+        per_age["introductory_id"].to_list(),
+        per_age["age"].to_list(),
+        per_age["sum_ratings"].to_list(),
+        per_age["n_selected"].to_list(),
+    ):
+        gmfcs_int = gmfcs.get(uid)
+        if gmfcs_int is None:
+            n_named = round(sum(N_NAMED_BY_AGE_GMFCS[int(age)].values()) / len(N_NAMED_BY_AGE_GMFCS[int(age)]))
+        else:
+            n_named = N_NAMED_BY_AGE_GMFCS[int(age)].get(gmfcs_int, 18)
+
+        n_selected = int(round(n_sel)) if n_sel else 0
+
+        presence_score = 1.0 - (n_selected / n_named) if n_named > 0 else None
+        presence_score = max(0.0, min(1.0, presence_score)) if presence_score is not None else None
+
+        n_selected_capped = min(n_selected, n_named)
+        presence_score = 1.0 - (n_selected_capped / n_named) if n_named > 0 else 1.0
+        presence_score = max(0.0, min(1.0, presence_score))
+
+        if n_selected > 0:
+            mean_rating    = s / n_selected
+            severity_score = 1.0 - ((mean_rating - 1) / 4)
+            severity_score = max(0.0, min(1.0, severity_score))
+        else:
+            severity_score = 1.0  # inga nedsättningar = ingen svårighetsgrad alls
+
+        presence_list.append(float(presence_score) if presence_score is not None else None)
+        severity_list.append(float(severity_score) if severity_score is not None else None)
+
+    return (
+        per_age
+        .with_columns([
+            pl.Series("presence_score", presence_list, dtype=pl.Float64),
+            pl.Series("severity_score", severity_list, dtype=pl.Float64),
+        ])
+        .select([
+            "introductory_id", "age",
+            "sum_ratings", "n_selected",
+            "presence_score", "severity_score",
+        ])
+        .sort(["introductory_id", "age"])
+    )
+
 def motorscore_milestones_setvalue(
     df: pl.DataFrame,
     introductory_df: pl.DataFrame,

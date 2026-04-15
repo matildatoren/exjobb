@@ -87,21 +87,21 @@ FILTER_IDS = [
 ANALYSES = [
     {
         "cols":       ["delta_milestone_score_setvalue", "delta_impairment_score_setvalue"],
-        "ages":       [1, 2, 3, 4],
+        "ages":       [2, 3, 4],
         "title":      "t-SNE & UMAP — Δ Milestone + Δ Impairment score (setvalue)",
         "filename":   "tsne_umap_delta_setvalue.png",
         "n_clusters": 2,
     },
     {
         "cols":       ["delta_milestone_score_setvalue"],
-        "ages":       [1, 2, 3, 4],
+        "ages":       [2, 3, 4],
         "title":      "t-SNE & UMAP — Δ Milestone score (setvalue)",
         "filename":   "tsne_umap_delta_milestone_setvalue.png",
         "n_clusters": 2,
     },
     {
         "cols":       ["delta_impairment_score_setvalue"],
-        "ages":       [1, 2, 3, 4],
+        "ages":       [2, 3, 4],
         "title":      "t-SNE & UMAP — Δ Impairment score (setvalue)",
         "filename":   "tsne_umap_delta_impairment_setvalue.png",
         "n_clusters": 2,
