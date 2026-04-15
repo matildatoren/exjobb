@@ -4,30 +4,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 import re
-from sklearn.cluster import KMeans
-from sklearn.metrics import silhouette_score
 from pathlib import Path
 from sklearn.preprocessing import StandardScaler
-from sklearn.manifold import TSNE
-import umap
+from sklearn.decomposition import PCA
 
-IMAGES_DIR = Path(__file__).resolve().parent / "images"
-IMAGES_DIR.mkdir(exist_ok=True)
-
-GMFCS_COLORS = {
-    "I":   "green",
-    "II":  "blue",
-    "III": "orange",
-    "IV":  "red",
-    "V":   "purple",
-}
-
-CLUSTER_COLORS = {
-    0: "blue",
-    1: "red",
-    2: "green",
-    3: "purple",
-}
+FIGURES_DIR = Path(__file__).resolve().parents[2] / "outputs" / "pca_analysis"
+FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
 # ════════════════════════════════════════════════════════════════════════════
 # CONFIG — ändra här
@@ -55,18 +37,17 @@ FILTER_IDS = [
     "cd26a009-6e51-4372-b151-b7d2bb8b7183",
     "df67e7ea-0b50-408b-9342-4c29d0efa839",
     "30302f7a-c470-47bf-8f0e-d104b3065d99",
+    "1950325f-99da-47b4-b49d-735253ba0aaa",
 ]
 
 # ── What to analyse ──────────────────────────────────────────────────────────
-# Each entry in ANALYSES defines one t-SNE/UMAP run.
+# Each entry defines one PCA run.
 # - "cols"     : list of columns from master to use as features.
-#                These are pivoted wide by age (one feature per col×age).
-#                If the column has no age variation (e.g. gmfcs_int) it is
-#                used as-is (one feature total).
-# - "ages"     : which age buckets to include in the pivot (set to [] to skip pivot)
+#                Pivoted wide by age (one feature per col×age).
+#                Set ages=[] for static columns (no pivot).
+# - "ages"     : which age buckets to include. Set to [] to skip pivot.
 # - "title"    : suptitle for the plot
 # - "filename" : output filename
-# - "n_clusters": number of KMeans clusters (set to 0 to disable clustering)
 #
 # Examples of cols you can use from master:
 #   Motor scores (per age):
@@ -80,51 +61,33 @@ FILTER_IDS = [
 #   Training (per age):
 #     "log_total_home_training_hours", "log_neurohab_hours"
 #     "log_active_total_hours", "log_total_other_training_hours"
-#   Static (no age pivot needed — set ages=[]):
+#   Static (set ages=[]):
 #     "gmfcs_int"
 
 ANALYSES = [
     {
-        "cols":       ["delta_milestone_score_setvalue", "delta_impairment_score_setvalue"],
-        "ages":       [1, 2, 3, 4],
-        "title":      "t-SNE & UMAP — Δ Milestone + Δ Impairment score (setvalue)",
-        "filename":   "tsne_umap_delta_setvalue.png",
-        "n_clusters": 2,
+        "cols":     ["delta_milestone_score_setvalue", "delta_impairment_score_setvalue"],
+        "ages":     [1, 2, 3, 4],
+        "title":    "PCA — Δ Milestone + Δ Impairment score (setvalue)",
+        "filename": "pca_delta_setvalue.png",
     },
     {
-        "cols":       ["delta_milestone_score_setvalue"],
-        "ages":       [1, 2, 3, 4],
-        "title":      "t-SNE & UMAP — Δ Milestone score (setvalue)",
-        "filename":   "tsne_umap_delta_milestone_setvalue.png",
-        "n_clusters": 2,
+        "cols":     ["milestone_score_setvalue", "impairment_score_setvalue"],
+        "ages":     [1, 2, 3, 4],
+        "title":    "PCA — Milestone + Impairment score (setvalue)",
+        "filename": "pca_scores_setvalue.png",
     },
     {
-        "cols":       ["delta_impairment_score_setvalue"],
-        "ages":       [1, 2, 3, 4],
-        "title":      "t-SNE & UMAP — Δ Impairment score (setvalue)",
-        "filename":   "tsne_umap_delta_impairment_setvalue.png",
-        "n_clusters": 2,
+        "cols":     ["log_total_home_training_hours", "log_neurohab_hours", "log_total_other_training_hours"],
+        "ages":     [1, 2, 3, 4],
+        "title":    "PCA — Träningsprofil per barn",
+        "filename": "pca_training.png",
     },
     {
-        "cols":       ["milestone_score_setvalue", "impairment_score_setvalue"],
-        "ages":       [1, 2, 3, 4],
-        "title":      "t-SNE & UMAP — Milestone + Impairment score (setvalue)",
-        "filename":   "tsne_umap_scores_setvalue.png",
-        "n_clusters": 2,
-    },
-    {
-        "cols":       ["log_total_home_training_hours", "log_neurohab_hours", "log_total_other_training_hours"],
-        "ages":       [1, 2, 3, 4],
-        "title":      "t-SNE & UMAP — Träningsprofil per barn",
-        "filename":   "tsne_umap_training.png",
-        "n_clusters": 2,
-    },
-    {
-        "cols":       ["combined_score_setvalue"],
-        "ages":       [1, 2, 3, 4],
-        "title":      "t-SNE & UMAP — Combined score trajectory (setvalue)",
-        "filename":   "tsne_umap_combined.png",
-        "n_clusters": 2,
+        "cols":     ["combined_score_setvalue"],
+        "ages":     [1, 2, 3, 4],
+        "title":    "PCA — Combined score trajectory (setvalue)",
+        "filename": "pca_combined.png",
     },
 ]
 
@@ -137,56 +100,6 @@ def _gmfcs_map(introductory_df: pl.DataFrame) -> dict:
         introductory_df["id"].to_list(),
         introductory_df["gmfcs_lvl"].to_list(),
     ))
-
-
-def _get_gmfcs_level(gmfcs_str: str) -> str:
-    if gmfcs_str is None:
-        return None
-    match = re.search(r"Level\s+(I{1,3}V?|VI{0,3}|IV|V)", str(gmfcs_str))
-    return match.group(1) if match else None
-
-
-def _gmfcs_color(gmfcs_str: str) -> str:
-    return GMFCS_COLORS.get(_get_gmfcs_level(gmfcs_str), "gray")
-
-
-def _add_gmfcs_legend(ax):
-    legend_elements = [
-        Patch(facecolor=color, label=f"GMFCS {lvl}")
-        for lvl, color in GMFCS_COLORS.items()
-    ]
-    ax.legend(handles=legend_elements, fontsize=7, loc="lower right")
-
-
-def _add_cluster_legend(ax, n_clusters):
-    legend_elements = [
-        Patch(facecolor=CLUSTER_COLORS[k], label=f"Cluster {k+1}")
-        for k in range(n_clusters)
-    ]
-    ax.legend(handles=legend_elements, fontsize=7, loc="lower right")
-
-
-def _scatter_panel(ax, X_2d, ids, gmfcs, title, xlabel, ylabel, cluster_labels=None, n_clusters=2):
-    for i, child_id in enumerate(ids):
-        color = (
-            CLUSTER_COLORS[cluster_labels[i]] if cluster_labels is not None
-            else _gmfcs_color(gmfcs.get(child_id))
-        )
-        ax.scatter(X_2d[i, 0], X_2d[i, 1], color=color, s=100, zorder=3,
-                   edgecolors="white", linewidths=0.5)
-        ax.annotate(str(child_id)[:8], (X_2d[i, 0], X_2d[i, 1]),
-                    fontsize=7, ha="left", va="bottom", alpha=0.75)
-
-    ax.axhline(0, color="gray", linewidth=0.6, linestyle=":")
-    ax.axvline(0, color="gray", linewidth=0.6, linestyle=":")
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
-    ax.set_title(title)
-
-    if cluster_labels is not None:
-        _add_cluster_legend(ax, n_clusters)
-    else:
-        _add_gmfcs_legend(ax)
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -210,7 +123,6 @@ def build_feature_matrix(
     if FILTER_IDS:
         df = df[df["introductory_id"].isin(FILTER_IDS)]
 
-    # Only keep cols that actually exist
     missing = [c for c in cols if c not in df.columns]
     if missing:
         print(f"  Warning: columns not found in master and will be skipped: {missing}")
@@ -222,7 +134,6 @@ def build_feature_matrix(
     rows = {}
 
     if ages:
-        # Pivot: one feature per (col, age)
         for child_id, grp in df.groupby("introductory_id"):
             feat = {}
             for col in cols:
@@ -231,7 +142,6 @@ def build_feature_matrix(
                     feat[f"{col}_age{age}"] = age_vals.get(age, np.nan)
             rows[child_id] = feat
     else:
-        # Static: one row per child (take first non-null value per col)
         for child_id, grp in df.groupby("introductory_id"):
             rows[child_id] = {
                 col: grp[col].dropna().iloc[0] if not grp[col].dropna().empty else np.nan
@@ -241,10 +151,8 @@ def build_feature_matrix(
     wide = pd.DataFrame(rows).T
     wide.index.name = "introductory_id"
 
-    # Mean-impute per column across children
     for col in wide.columns:
-        col_mean = wide[col].mean()
-        wide[col] = wide[col].fillna(col_mean)
+        wide[col] = wide[col].fillna(wide[col].mean())
 
     before = len(wide)
     wide = wide.dropna()
@@ -255,56 +163,80 @@ def build_feature_matrix(
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# t-SNE + UMAP runner
+# PCA runner
 # ════════════════════════════════════════════════════════════════════════════
 
-def run_tsne_umap(
+def run_pca(
     feature_df: pd.DataFrame,
-    gmfcs: dict,
-    suptitle: str,
+    title: str,
     filename: str,
-    n_clusters: int = 2,
-    perplexity: int = 5,
-    n_neighbors: int = 5,
 ):
-    n = len(feature_df)
-    perplexity  = min(perplexity,  n - 1)
-    n_neighbors = min(n_neighbors, n - 1)
+    if len(feature_df) < 2:
+        print(f"  Too few children for PCA — skipping {filename}")
+        return
 
-    ids = feature_df.index.tolist()
-
+    ids      = feature_df.index.tolist()
     scaler   = StandardScaler()
     X_scaled = scaler.fit_transform(feature_df)
 
-    tsne   = TSNE(n_components=2, perplexity=perplexity, random_state=42, max_iter=1000)
-    X_tsne = tsne.fit_transform(X_scaled)
+    # ── Fit PCA for scatter (2 components) ──────────────────────────────────
+    n_components = min(2, X_scaled.shape[0] - 1, X_scaled.shape[1])
+    pca          = PCA(n_components=n_components)
+    X_pca        = pca.fit_transform(X_scaled)
+    explained    = pca.explained_variance_ratio_ * 100
+    loadings     = pca.components_
 
-    reducer = umap.UMAP(n_components=2, n_neighbors=n_neighbors, random_state=42)
-    X_umap  = reducer.fit_transform(X_scaled)
-
-    cluster_labels = None
-    if n_clusters > 0 and n >= n_clusters:
-        km = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-        cluster_labels = km.fit_predict(X_scaled)
-        if n >= n_clusters + 1:
-            sil = silhouette_score(X_scaled, cluster_labels)
-            print(f"  Silhouette (k={n_clusters}): {sil:.3f}")
+    # ── Fit full PCA for scree ───────────────────────────────────────────────
+    full_pca = PCA().fit(X_scaled)
+    all_exp  = full_pca.explained_variance_ratio_ * 100
+    cum_exp  = np.cumsum(all_exp)
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
-    panels = [
-        (axes[0], X_tsne, cluster_labels, f"t-SNE (perplexity={perplexity})"),
-        (axes[1], X_umap, cluster_labels, f"UMAP (n_neighbors={n_neighbors})"),
-    ]
-    for ax, X_2d, cl, title in panels:
-        _scatter_panel(ax, X_2d, ids, gmfcs, title,
-                       xlabel="Dim 1", ylabel="Dim 2",
-                       cluster_labels=cl, n_clusters=n_clusters)
 
-    plt.suptitle(suptitle, fontsize=13)
+    # ── Panel 1: scatter ─────────────────────────────────────────────────────
+    ax = axes[0]
+    for i, child_id in enumerate(ids):
+        pc2_val = X_pca[i, 1] if n_components > 1 else 0
+        ax.scatter(X_pca[i, 0], pc2_val, color="steelblue", s=100, zorder=3,
+                   edgecolors="white", linewidths=0.5)
+        ax.annotate(str(child_id)[:8], (X_pca[i, 0], pc2_val),
+                    fontsize=7, ha="left", va="bottom", alpha=0.75)
+
+    ax.axhline(0, color="gray", linewidth=0.6, linestyle=":")
+    ax.axvline(0, color="gray", linewidth=0.6, linestyle=":")
+    ax.set_xlabel(f"PC1 ({explained[0]:.1f}% förklarad varians)")
+    ax.set_ylabel(f"PC2 ({explained[1]:.1f}% förklarad varians)" if n_components > 1 else "PC2")
+    ax.set_title(title)
+
+    # ── Panel 2: scree ───────────────────────────────────────────────────────
+    ax2 = axes[1]
+    ax2.bar(range(1, len(all_exp) + 1), all_exp,
+            color="steelblue", alpha=0.7, label="Per komponent")
+    ax2.plot(range(1, len(cum_exp) + 1), cum_exp,
+             color="orange", marker="o", label="Kumulativ")
+    ax2.axhline(80, color="red", linewidth=0.8, linestyle="--", label="80%-gräns")
+    ax2.set_xlabel("Komponent")
+    ax2.set_ylabel("Förklarad varians (%)")
+    ax2.set_title("Scree plot")
+    ax2.legend()
+
+    plt.suptitle(title, fontsize=13)
     plt.tight_layout()
-    plt.savefig(IMAGES_DIR / filename, dpi=150)
+    plt.savefig(FIGURES_DIR / filename, dpi=150)
     print(f"  Saved: {filename}")
     plt.close()
+
+    # ── Print loadings ───────────────────────────────────────────────────────
+    loadings_df = pd.DataFrame(
+        loadings.T,
+        index=feature_df.columns,
+        columns=[f"PC{i+1}" for i in range(n_components)],
+    )
+    print("\n  Förklarad varians per komponent:")
+    for i, ev in enumerate(explained):
+        print(f"    PC{i+1}: {ev:.1f}%")
+    print("\n  Loadings (sorterat på PC1):")
+    print(loadings_df.round(3).sort_values("PC1", ascending=False).to_string())
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -320,16 +252,14 @@ if __name__ == "__main__":
     data = load_data(conn)
 
     master = build_master_feature_table(data)
-    gmfcs  = _gmfcs_map(data["introductory"])
 
     for cfg in ANALYSES:
         print(f"\n── {cfg['title']} ──")
         feature_df = build_feature_matrix(master, cols=cfg["cols"], ages=cfg["ages"])
-        run_tsne_umap(
-            feature_df, gmfcs,
-            suptitle   = cfg["title"],
-            filename   = cfg["filename"],
-            n_clusters = cfg["n_clusters"],
+        run_pca(
+            feature_df,
+            title    = cfg["title"],
+            filename = cfg["filename"],
         )
 
     plt.show()

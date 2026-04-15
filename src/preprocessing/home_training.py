@@ -5,11 +5,9 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-# -------------------------------------------- 
-# therapies, devices and other training as separate tables
-# --------------------------------------------
-
-# ------ helper methods for extracting data ------
+# ════════════════════════════════════════════════════════════════════════════
+# Helpers — extract hours from raw structs
+# ════════════════════════════════════════════════════════════════════════════
 
 def extract_hometraining_hours(training):
     if training is None:
@@ -83,7 +81,9 @@ def extract_other_training_hours(other_training):
 
     return total_hours
 
-# ----- functions for extracting the data into tables per year and per survey ---------
+# ════════════════════════════════════════════════════════════════════════════
+# Hours per user per year
+# ════════════════════════════════════════════════════════════════════════════
 
 def process_home_training_hours_per_user_per_year(df: pl.DataFrame) -> pl.DataFrame:
     structs = df["training_methods_therapies"].to_list()
@@ -141,11 +141,9 @@ def process_other_training_hours_per_user_per_year(df: pl.DataFrame) -> pl.DataF
 
     return df_grouped
 
-# -------------------------------------------- 
-# all tables together, therapies, devices and other training 
-# --------------------------------------------
-
-#---- helper method ----
+# ════════════════════════════════════════════════════════════════════════════
+# Detailed training breakdown by type
+# ════════════════════════════════════════════════════════════════════════════
 def extract_training_details(training_struct, category_name):
 
     if training_struct is None:
@@ -181,7 +179,6 @@ def extract_training_details(training_struct, category_name):
 
     return rows
 
-#---- extracting everything by type ----
 def process_training_per_type_per_year(df: pl.DataFrame) -> pl.DataFrame:
     all_rows = []
 

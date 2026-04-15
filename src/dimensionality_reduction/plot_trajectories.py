@@ -25,8 +25,8 @@ from src.connect_db import get_connection
 from src.dataloader import load_data
 from src.preprocessing.master_preprocessing import build_master_feature_table
 
-IMAGES_DIR = Path(__file__).resolve().parent / "images"
-IMAGES_DIR.mkdir(exist_ok=True)
+FIGURES_DIR = Path(__file__).resolve().parents[2] / "outputs" / "plot_trajectories"
+FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
 # ════════════════════════════════════════════════════════════════════════════
 # GROUPS — paste IDs into GROUP_A, GROUP_B and GROUP_C.
@@ -42,6 +42,8 @@ GROUP_A = [
     "8dba1f55-9e79-4e62-90c3-02e9609d3feb",
     "771d12c3-bc1a-4a97-ad27-00d35b24f87e",
     "df67e7ea-0b50-408b-9342-4c29d0efa839",
+    "1950325f-99da-47b4-b49d-735253ba0aaa",
+
 ]
 
 GROUP_B = [
@@ -62,7 +64,6 @@ GROUP_B = [
 ]
 
 GROUP_C = [
-
 ]
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -236,7 +237,7 @@ def plot_individual_trajectories(
     fig.suptitle(f"Individual Trajectories — {group_label}  (n={n})",
                  fontsize=14, y=1.01)
     plt.tight_layout()
-    path = IMAGES_DIR / filename
+    path = FIGURES_DIR / filename
     plt.savefig(path, dpi=150, bbox_inches="tight")
     print(f"  Saved: {path.name}")
     plt.show()
@@ -310,7 +311,7 @@ def plot_combined_groups(
         fontsize=13, y=1.01,
     )
     plt.tight_layout()
-    path = IMAGES_DIR / filename
+    path = FIGURES_DIR / filename
     plt.savefig(path, dpi=150, bbox_inches="tight")
     print(f"  Saved: {path.name}")
     plt.show()
@@ -370,7 +371,7 @@ def plot_group_averages(
     ax.spines["right"].set_visible(False)
 
     plt.tight_layout()
-    path = IMAGES_DIR / filename
+    path = FIGURES_DIR / filename
     plt.savefig(path, dpi=150, bbox_inches="tight")
     print(f"  Saved: {path.name}")
     plt.show()

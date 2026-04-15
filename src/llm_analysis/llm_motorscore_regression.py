@@ -40,11 +40,12 @@ from src.preprocessing.master_preprocessing import build_master_feature_table
 
 # ─── Paths ────────────────────────────────────────────────────────────────────
 
-LLM_SCORE_CSV = Path(__file__).resolve().parent / "outputs" / "llm_motorscore_results.csv"
-RESULTS_DIR   = Path(__file__).resolve().parent / "results"
-IMAGES_DIR    = Path(__file__).resolve().parent / "images"
-RESULTS_DIR.mkdir(exist_ok=True)
-IMAGES_DIR.mkdir(exist_ok=True)
+_ROOT         = Path(__file__).resolve().parents[2]
+LLM_SCORE_CSV = _ROOT / "outputs" / "motorscore_analysis" / "llm_motorscore_results.csv"
+RESULTS_DIR   = _ROOT / "outputs" / "llm_motorscore_regression" / "results"
+FIGURES_DIR   = _ROOT / "outputs" / "llm_motorscore_regression" / "figures"
+RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -73,6 +74,7 @@ FILTER_INTRODUCTORY_IDS: list[str] = [
         "cd26a009-6e51-4372-b151-b7d2bb8b7183",
         "df67e7ea-0b50-408b-9342-4c29d0efa839",
         "30302f7a-c470-47bf-8f0e-d104b3065d99",
+        "1950325f-99da-47b4-b49d-735253ba0aaa",
         ]
 
 # Feature sets to test — comment/uncomment as needed
@@ -151,7 +153,7 @@ def load_llm_scores() -> pd.DataFrame:
     if not LLM_SCORE_CSV.exists():
         raise FileNotFoundError(
             f"LLM score CSV not found: {LLM_SCORE_CSV}\n"
-            "Run src/FreeText/llm_motorscore_analysis.py first."
+            "Run src/llm_analysis/llm_motorscore_analysis.py first."
         )
     df = pd.read_csv(LLM_SCORE_CSV)
     print(f"  LLM score CSV loaded: {len(df)} rows")
@@ -349,7 +351,7 @@ def run_random_forest(df: pd.DataFrame) -> None:
     ax.set_title(f"Random Forest — Feature Importance\n(CV R²={cv_res['cv_r2_mean']:.3f}, n={len(subset)})")
     ax.set_xlabel("Importance")
     plt.tight_layout()
-    path = IMAGES_DIR / "llm_motorscore_rf_importance.png"
+    path = FIGURES_DIR / "llm_motorscore_rf_importance.png"
     plt.savefig(path, dpi=150)
     print(f"  Saved: {path.name}")
     plt.show()
@@ -380,7 +382,7 @@ def plot_predicted_vs_actual(df: pd.DataFrame) -> None:
     ax.set_title(f"OLS Full Model — Predicted vs Actual\n(Adj. R²={model.rsquared_adj:.3f}, n={len(subset)})")
     ax.legend()
     plt.tight_layout()
-    path = IMAGES_DIR / "llm_motorscore_pred_vs_actual.png"
+    path = FIGURES_DIR / "llm_motorscore_pred_vs_actual.png"
     plt.savefig(path, dpi=150)
     print(f"  Saved: {path.name}")
     plt.show()

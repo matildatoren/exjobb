@@ -5,7 +5,9 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-# --- helper method ----
+# ════════════════════════════════════════════════════════════════════════════
+# Helpers
+# ════════════════════════════════════════════════════════════════════════════
 def extract_neurohab_center_hours(struct):
     if struct is None:
         return []
@@ -20,7 +22,9 @@ def extract_neurohab_center_hours(struct):
         rows.append({"center_name": center_name, "total_hours": total_hours})
     return rows
 
-# --- extract neurorehabilitation center hours for every child every year ----
+# ════════════════════════════════════════════════════════════════════════════
+# Hours and treatments per user per year
+# ════════════════════════════════════════════════════════════════════════════
 def process_neurohab_hours_per_user_per_age(df: pl.DataFrame) -> pl.DataFrame:
 
     all_rows = []
@@ -53,7 +57,6 @@ def process_neurohab_hours_per_user_per_age(df: pl.DataFrame) -> pl.DataFrame:
 
     return result
 
-# --- extract medical treatments for every child every year, 0 or 1 ----
 def process_medical_treatments_per_user_per_age(df: pl.DataFrame) -> pl.DataFrame:
 
     all_rows = []

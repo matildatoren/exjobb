@@ -12,11 +12,11 @@ Figures produced:
   5. Other training hours vs motor score, coloured by GMFCS
 
 Usage:
-    cd src/FreeText
-    python llm_motorscore_figures.py
+    cd src/llm_analysis
+    python llm_motorscore_analysis.py
 
 Requires:
-    results/llm_motorscore_merged_dataset.csv  (from llm_motorscore_regression.py)
+    outputs/llm_motorscore_regression/results/llm_motorscore_merged_dataset.csv  (from llm_motorscore_regression.py)
 """
 
 from pathlib import Path
@@ -29,10 +29,10 @@ from scipy import stats
 
 # ─── Paths ────────────────────────────────────────────────────────────────────
 
-HERE        = Path(__file__).resolve().parent
-MERGED_CSV  = HERE / "results" / "llm_motorscore_merged_dataset.csv"
-FIGURES_DIR = HERE / "figures"
-FIGURES_DIR.mkdir(exist_ok=True)
+_ROOT       = Path(__file__).resolve().parents[2]
+MERGED_CSV  = _ROOT / "outputs" / "llm_motorscore_regression" / "results" / "llm_motorscore_merged_dataset.csv"
+FIGURES_DIR = _ROOT / "outputs" / "llm_motorscore_analysis"
+FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
 # ─── Style ────────────────────────────────────────────────────────────────────
 

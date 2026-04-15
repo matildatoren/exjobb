@@ -11,12 +11,5 @@ wheels/
 
 # Secret env
 .env
-images/*.png
-src/images/*.png
-src/LinearAnalysis/images/*.png
-src/StatisticalAnalysis/images/*.png
-src/DimensionalityReduction/images/*.png
-src/FreeText/outputs/
-src/FreeText/figures/
-src/FreeText/images/
-src/FreeText/results/
+# Generated analysis outputs (figures, results, CSVs)
+outputs/

@@ -26,8 +26,7 @@ import shap
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import cross_val_score, LeaveOneOut
-from sklearn.metrics import r2_score, mean_absolute_error
-from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import r2_score
 
 # ── resolve src/ on the path ────────────────────────────────────────────────
 SRC = Path(__file__).resolve().parent / "src"
@@ -37,23 +36,8 @@ from src.connect_db import get_connection
 from src.dataloader import load_data
 from src.preprocessing.master_preprocessing import build_master_feature_table
 
-IMAGES_DIR = Path(__file__).resolve().parent / "images"
-IMAGES_DIR.mkdir(exist_ok=True)
-
-#     3. milestone_score_setvalue
-#     4. milestone_score
-#     5. impairment_score_setvalue
-#     6. impairment_score
-#     7. motorical_score
-#     8. combined_score_setvalue
-#     9. combined_score
-#    10. delta_milestone_score_setvalue
-#    11. delta_milestone_score
-#    12. delta_impairment_score_setvalue
-#    13. delta_impairment_score
-#    14. delta_combined_score_setvalue
-#    15. delta_combined_score
-#    16. delta_motorical_score
+FIGURES_DIR = Path(__file__).resolve().parents[2] / "outputs" / "model_comparison"
+FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
 FILTER_INTRODUCTORY_IDS = [
         "c0990a55-916e-47ba-b29a-aee83d9f33c9",
@@ -77,6 +61,7 @@ FILTER_INTRODUCTORY_IDS = [
         "cd26a009-6e51-4372-b151-b7d2bb8b7183",
         "df67e7ea-0b50-408b-9342-4c29d0efa839",
         "30302f7a-c470-47bf-8f0e-d104b3065d99",
+        "1950325f-99da-47b4-b49d-735253ba0aaa",
 ]
 
 TARGET = "delta_motorical_score"
@@ -199,7 +184,7 @@ def plot_predicted_vs_actual(result: dict):
     ax.set_title(f"{result['name']} — Predicted vs Actual\n(train R² = {result['train_r2']:.3f})")
     ax.legend()
     plt.tight_layout()
-    path = IMAGES_DIR / f"pred_vs_actual_{result['name'].replace(' ', '_')}.png"
+    path = FIGURES_DIR / f"pred_vs_actual_{result['name'].replace(' ', '_')}.png"
     plt.savefig(path, dpi=150)
     print(f"  Saved: {path.name}")
     plt.show()
@@ -220,7 +205,7 @@ def plot_feature_importance(result: dict):
     ax.set_title(f"{result['name']} — Feature Importances")
     ax.set_xlabel("Importance")
     plt.tight_layout()
-    path = IMAGES_DIR / f"feature_importance_{result['name'].replace(' ', '_')}.png"
+    path = FIGURES_DIR / f"feature_importance_{result['name'].replace(' ', '_')}.png"
     plt.savefig(path, dpi=150)
     print(f"  Saved: {path.name}")
     plt.show()
@@ -242,7 +227,7 @@ def plot_shap(result: dict):
     shap.summary_plot(shap_values, X, plot_type="dot", max_display=10, show=False)
     plt.title(f"{result['name']} — SHAP Beeswarm")
     plt.tight_layout()
-    path = IMAGES_DIR / f"shap_{result['name'].replace(' ', '_')}.png"
+    path = FIGURES_DIR / f"shap_{result['name'].replace(' ', '_')}.png"
     plt.savefig(path, dpi=150, bbox_inches="tight")
     print(f"  Saved: {path.name}")
     plt.show()
@@ -274,7 +259,7 @@ def plot_partial_dependence(result: dict):
 
     fig.suptitle(f"{result['name']} — Partial Dependence", fontsize=13)
     plt.tight_layout()
-    path = IMAGES_DIR / f"partial_dep_{result['name'].replace(' ', '_')}.png"
+    path = FIGURES_DIR / f"partial_dep_{result['name'].replace(' ', '_')}.png"
     plt.savefig(path, dpi=150)
     print(f"  Saved: {path.name}")
     plt.show()
