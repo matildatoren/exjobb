@@ -41,7 +41,7 @@ from src.preprocessing.master_preprocessing import build_master_feature_table
 # ─── Paths ────────────────────────────────────────────────────────────────────
 
 _ROOT         = Path(__file__).resolve().parents[2]
-LLM_SCORE_CSV = _ROOT / "outputs" / "story_analysis" / "llm_motorscore_results.csv"
+LLM_SCORE_CSV = _ROOT / "outputs" / "motorscore_analysis" / "llm_motorscore_results.csv"
 RESULTS_DIR   = _ROOT / "outputs" / "llm_motorscore_regression" / "results"
 FIGURES_DIR   = _ROOT / "outputs" / "llm_motorscore_regression" / "figures"
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)

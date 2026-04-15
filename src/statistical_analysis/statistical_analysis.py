@@ -1,7 +1,8 @@
 """
 Association Analysis v4 — Extended
 ====================================
-New analyses vs v3:
+Analyses:
+  0. Spearman correlations (heatmap)
   1. Baseline-controlled delta regression
   2. Time interval stratification (which age transition)
   3. Training × GMFCS interaction term
@@ -174,6 +175,85 @@ def _standardize(df, cols):
             if std > 0:
                 out[c] = (out[c] - out[c].mean()) / std
     return out
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# 0. SPEARMAN CORRELATIONS
+# ════════════════════════════════════════════════════════════════════════════
+
+def run_spearman(df: pd.DataFrame) -> pd.DataFrame:
+    features = CONTINUOUS_FEATURES + BINARY_FEATURES + CONTROL_VARS
+    rows = []
+
+    for target in TARGETS:
+        if target not in df.columns:
+            continue
+
+        for feat in features:
+            if feat not in df.columns:
+                continue
+            common = df[[feat, target]].dropna()
+            if len(common) < 5:
+                continue
+            r, p = stats.spearmanr(common[feat], common[target])
+            rows.append({
+                "target":  TARGET_LABELS.get(target, target),
+                "feature": FEATURE_LABELS.get(feat, feat),
+                "rho":     round(r, 3),
+                "p_value": round(p, 4),
+                "n":       len(common),
+            })
+
+    return pd.DataFrame(rows)
+
+
+def print_spearman(spearman_df: pd.DataFrame):
+    sep = "=" * 70
+    print(f"\n{sep}")
+    print("  SPEARMAN CORRELATIONS")
+    print(sep)
+    for target in spearman_df["target"].unique():
+        sub = spearman_df[spearman_df["target"] == target].sort_values(
+            "rho", key=abs, ascending=False
+        )
+        print(f"\n  Target: {target}")
+        print(f"  {'Feature':<35} {'ρ':>7} {'p':>8} {'n':>5}")
+        print(f"  {'-'*55}")
+        for _, row in sub.iterrows():
+            sig = _sig(row["p_value"])
+            print(f"  {row['feature']:<35} {row['rho']:>7.3f} {row['p_value']:>8.4f}{sig:>4}  (n={row['n']})")
+
+
+def plot_spearman_heatmap(spearman_df: pd.DataFrame):
+    """Heatmap of Spearman ρ values across features and targets."""
+    pivot = spearman_df.pivot(index="feature", columns="target", values="rho")
+    pvals = spearman_df.pivot(index="feature", columns="target", values="p_value")
+
+    fig, ax = plt.subplots(
+        figsize=(max(6, len(pivot.columns) * 3), max(4, len(pivot) * 0.6))
+    )
+    im = ax.imshow(pivot.values, cmap="RdBu_r", vmin=-1, vmax=1, aspect="auto")
+
+    ax.set_xticks(range(len(pivot.columns)))
+    ax.set_xticklabels(pivot.columns, rotation=20, ha="right")
+    ax.set_yticks(range(len(pivot.index)))
+    ax.set_yticklabels(pivot.index)
+
+    for i in range(len(pivot.index)):
+        for j in range(len(pivot.columns)):
+            rho = pivot.values[i, j]
+            p   = pvals.values[i, j]
+            sig = _sig(p)
+            if not np.isnan(rho):
+                ax.text(j, i, f"{rho:.2f}{sig}", ha="center", va="center",
+                        fontsize=9, color="black" if abs(rho) < 0.6 else "white")
+
+    plt.colorbar(im, ax=ax, label="Spearman ρ")
+    ax.set_title("Spearman Correlations\n(* p<0.05  ** p<0.01  *** p<0.001)")
+    plt.tight_layout()
+    path = FIGURES_DIR / "spearman_heatmap.png"
+    plt.savefig(path, dpi=150)
+    print(f"  Saved: {path.name}")
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -744,6 +824,11 @@ def main():
 
     df = prepare_data(master)
     print(f"  Working dataset: {len(df)} rows, {df['introductory_id'].nunique()} children\n")
+
+    # ── 0. Spearman correlations ──────────────────────────────────────────────
+    spearman_df = run_spearman(df)
+    print_spearman(spearman_df)
+    plot_spearman_heatmap(spearman_df)
 
     # ── 1. Baseline-controlled regression ────────────────────────────────────
     run_baseline_controlled_regression(df)

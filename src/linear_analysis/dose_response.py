@@ -69,12 +69,12 @@ CONFIG = {
         ("log_total_other_training_hours", "Sports / other"),
         ("log_neurohab_hours",             "Intensive therapy"),
         ("log_active_total_hours",         "Combined active total"),
-        # ("log_cat_neurodevelopmental_reflex",         "Neurodevelopmental and Reflex based therapies"),
-        # ("log_cat_motor_learning_task",         "Motor learning and task oriented learning"),
-        # ("log_cat_technology_assisted",         "Technology assisted therapies"),
-        # ("log_cat_suit_based",         "Suit based therapies"),
-        # ("log_cat_physical_conditioning",         "Physical conditioning and activity based therapies"),
-        # ("log_cat_complementary",         "Complementary therapies"),
+        ("log_cat_neurodevelopmental_reflex",         "Neurodevelopmental and Reflex based therapies"),
+        ("log_cat_motor_learning_task",         "Motor learning and task oriented learning"),
+        ("log_cat_technology_assisted",         "Technology assisted therapies"),
+        ("log_cat_suit_based",         "Suit based therapies"),
+        ("log_cat_physical_conditioning",         "Physical conditioning and activity based therapies"),
+        ("log_cat_complementary",         "Complementary therapies"),
     ],
 
     # Input — kolumn som används i overall dose-response-plotten
