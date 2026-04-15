@@ -38,12 +38,10 @@ def extract_device_hours(devices):
             continue
 
         hours = device_info.get("hours", 0)
-        days = device_info.get("days", 1)
         weeks = device_info.get("weeks", 1)
 
         try:
             hours = float(hours or 0)
-            days = float(days or 0)
             weeks = float(weeks or 0)
 
             total_hours += hours * weeks
@@ -66,12 +64,10 @@ def extract_other_training_hours(other_training):
             continue
 
         hours = training_info.get("hours", 0)
-        days = training_info.get("days", 1)
         weeks = training_info.get("weeks", 1)
 
         try:
             hours = float(hours or 0)
-            days = float(days or 0)
             weeks = float(weeks or 0)
 
             total_hours += hours * weeks
@@ -159,7 +155,6 @@ def extract_training_details(training_struct, category_name):
             continue
 
         hours = info.get("hours", 0)
-        days = info.get("days", 1)
         weeks = info.get("weeks", 1)
 
         try:

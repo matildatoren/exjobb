@@ -214,7 +214,7 @@ def _build_motor_table(motorical_dev: pl.DataFrame, introductory: pl.DataFrame) 
     )
  
     imp_norm = (
-        motorscore_impairments(motorical_dev)
+        motorscore_impairments(motorical_dev, introductory)
         .select([
             "introductory_id", "age",
             pl.col("mms_normalized").alias("impairment_score"),

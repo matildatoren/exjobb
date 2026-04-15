@@ -188,9 +188,6 @@ def motorscore_impairments_presence_severity(
 
         n_selected = int(round(n_sel)) if n_sel else 0
 
-        presence_score = 1.0 - (n_selected / n_named) if n_named > 0 else None
-        presence_score = max(0.0, min(1.0, presence_score)) if presence_score is not None else None
-
         n_selected_capped = min(n_selected, n_named)
         presence_score = 1.0 - (n_selected_capped / n_named) if n_named > 0 else 1.0
         presence_score = max(0.0, min(1.0, presence_score))
@@ -416,6 +413,7 @@ def motorscore_milestones(df: pl.DataFrame) -> pl.DataFrame:
 
 def motorscore_impairments(
     df: pl.DataFrame,
+    introductory_df: pl.DataFrame,
     upper_col: str = "motorical_impairments_upper",
     lower_col: str = "motorical_impairments_lower",
 ) -> pl.DataFrame:
@@ -423,14 +421,6 @@ def motorscore_impairments(
     mms_normalized = mms / mean(mms) within age group.
     Returns values around 1.0 per (introductory_id, age).
     """
-    N_NAMED_BY_AGE: dict[int, int] = {1: 9, 2: 16, 3: 17, 4: 18}
-
-    def _n_named(age: float) -> int:
-        if age < 1:   return N_NAMED_BY_AGE[1]
-        elif age < 2: return N_NAMED_BY_AGE[2]
-        elif age < 3: return N_NAMED_BY_AGE[3]
-        else:         return N_NAMED_BY_AGE[4]
-
     # ── 1. Extract per-row: sum of ratings + "other" keys from both regions ──
     upper_list = df[upper_col].to_list()
     lower_list = df[lower_col].to_list()
@@ -463,7 +453,9 @@ def motorscore_impairments(
     )
 
     # ── 3. Derive N_other, N_named, max_score, MMS ───────────────────────────
+    gmfcs      = _gmfcs_lookup(introductory_df)
     ages       = per_age["age"].to_list()
+    uids       = per_age["introductory_id"].to_list()
     other_keys = per_age["other_keys_age"].to_list()
 
     n_named_list  : list[int]   = []
@@ -472,8 +464,12 @@ def motorscore_impairments(
     max_score_list: list[int]   = []
     mms_list      : list[float] = []
 
-    for age, o_keys, s_ratings in zip(ages, other_keys, per_age["sum_ratings"].to_list()):
-        n_named  = _n_named(float(age))
+    for uid, age, o_keys, s_ratings in zip(uids, ages, other_keys, per_age["sum_ratings"].to_list()):
+        gmfcs_int = gmfcs.get(uid)
+        if gmfcs_int is None:
+            n_named = round(sum(N_NAMED_BY_AGE_GMFCS[int(age)].values()) / len(N_NAMED_BY_AGE_GMFCS[int(age)]))
+        else:
+            n_named = N_NAMED_BY_AGE_GMFCS[int(age)].get(gmfcs_int, 18)
         n_other  = len(o_keys) if o_keys else 0
         n_total  = n_named + n_other
         max_sc   = n_total * 5
