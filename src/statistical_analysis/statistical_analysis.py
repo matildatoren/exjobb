@@ -36,8 +36,8 @@ from src.connect_db import get_connection
 from src.dataloader import load_data
 from src.preprocessing.master_preprocessing import build_master_feature_table
 
-IMAGES_DIR = Path(__file__).resolve().parent / "images"
-IMAGES_DIR.mkdir(exist_ok=True)
+FIGURES_DIR = Path(__file__).resolve().parents[2] / "outputs" / "statistical_analysis"
+FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -296,7 +296,7 @@ def run_time_interval_analysis(df: pd.DataFrame):
 
     plt.suptitle("Score Change by Age Interval", fontsize=13)
     plt.tight_layout()
-    path = IMAGES_DIR / "time_interval_analysis.png"
+    path = FIGURES_DIR / "time_interval_analysis.png"
     plt.savefig(path, dpi=150)
     print(f"\n  Saved: {path.name}")
     plt.show()
@@ -388,7 +388,7 @@ def run_interaction_analysis(df: pd.DataFrame):
 
     plt.suptitle("Training × GMFCS Interaction", fontsize=13)
     plt.tight_layout()
-    path = IMAGES_DIR / "interaction_analysis.png"
+    path = FIGURES_DIR / "interaction_analysis.png"
     plt.savefig(path, dpi=150)
     print(f"  Saved: {path.name}")
     plt.show()
@@ -479,7 +479,7 @@ def run_responder_analysis(df: pd.DataFrame):
 
     plt.suptitle("Training Hours: Responders vs Non-Responders", fontsize=13)
     plt.tight_layout()
-    path = IMAGES_DIR / "responder_analysis.png"
+    path = FIGURES_DIR / "responder_analysis.png"
     plt.savefig(path, dpi=150)
     print(f"\n  Saved: {path.name}")
     plt.show()
@@ -551,7 +551,7 @@ def run_quartile_analysis(df: pd.DataFrame):
 
     plt.suptitle("Dose-Response by Training Quartile", fontsize=13)
     plt.tight_layout()
-    path = IMAGES_DIR / "quartile_analysis.png"
+    path = FIGURES_DIR / "quartile_analysis.png"
     plt.savefig(path, dpi=150)
     print(f"\n  Saved: {path.name}")
     plt.show()
@@ -720,7 +720,7 @@ def run_category_comparison(df: pd.DataFrame):
 
         plt.suptitle("Training Category Associations (among users only)", fontsize=12)
         plt.tight_layout()
-        path = IMAGES_DIR / "category_comparison.png"
+        path = FIGURES_DIR / "category_comparison.png"
         plt.savefig(path, dpi=150)
         print(f"\n  Saved: {path.name}")
         plt.show()

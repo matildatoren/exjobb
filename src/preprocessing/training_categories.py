@@ -1,6 +1,6 @@
 """
-preprocessing_categories.py
-============================
+training_categories.py
+=======================
 Maps training names from ``training_methods_therapies`` (home_training)
 and ``methods_applied_during_intense_training`` (intensive_therapies) onto
 six therapy categories, then aggregates hours per category per child per year.

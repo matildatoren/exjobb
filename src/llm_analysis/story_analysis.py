@@ -24,8 +24,8 @@ INTRODUCTORY_IDS = [
     # "add-more-ids-here",
 ]
 
-OUTPUT_DIR = Path(__file__).resolve().parent / "outputs"
-OUTPUT_DIR.mkdir(exist_ok=True)
+OUTPUT_DIR = Path(__file__).resolve().parents[2] / "outputs" / "story_analysis"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 OUTPUT_TXT_PATH = OUTPUT_DIR / "llm_story_analysis_results.txt"
 OUTPUT_CSV_PATH = OUTPUT_DIR / "llm_story_analysis_results.csv"

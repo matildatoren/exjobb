@@ -11,8 +11,8 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.manifold import TSNE
 import umap
 
-IMAGES_DIR = Path(__file__).resolve().parent / "images"
-IMAGES_DIR.mkdir(exist_ok=True)
+FIGURES_DIR = Path(__file__).resolve().parents[2] / "outputs" / "tsne_umap"
+FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
 GMFCS_COLORS = {
     "I":   "green",
@@ -302,7 +302,7 @@ def run_tsne_umap(
 
     plt.suptitle(suptitle, fontsize=13)
     plt.tight_layout()
-    plt.savefig(IMAGES_DIR / filename, dpi=150)
+    plt.savefig(FIGURES_DIR / filename, dpi=150)
     print(f"  Saved: {filename}")
     plt.close()
 

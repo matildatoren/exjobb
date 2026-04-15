@@ -8,8 +8,8 @@ from pathlib import Path
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 
-IMAGES_DIR = Path(__file__).resolve().parent / "images"
-IMAGES_DIR.mkdir(exist_ok=True)
+FIGURES_DIR = Path(__file__).resolve().parents[2] / "outputs" / "pca_analysis"
+FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
 # ════════════════════════════════════════════════════════════════════════════
 # CONFIG — ändra här
@@ -221,7 +221,7 @@ def run_pca(
 
     plt.suptitle(title, fontsize=13)
     plt.tight_layout()
-    plt.savefig(IMAGES_DIR / filename, dpi=150)
+    plt.savefig(FIGURES_DIR / filename, dpi=150)
     print(f"  Saved: {filename}")
     plt.close()
 

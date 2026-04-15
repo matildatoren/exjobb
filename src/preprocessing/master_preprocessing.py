@@ -9,19 +9,17 @@ import polars as pl
 ROOT = Path(__file__).resolve().parents[1]   # src/
 sys.path.append(str(ROOT))
 
-from preprocessing.preprocessing_ht import (
+from preprocessing.home_training import (
     process_home_training_hours_per_user_per_year,
     process_other_training_hours_per_user_per_year,
 )
-from preprocessing.preprocessing_it import (
+from preprocessing.intensive_therapies import (
     process_neurohab_hours_per_user_per_age,
     process_medical_treatments_per_user_per_age,
 )
-
-from preprocessing.preprocessing_md import (
+from preprocessing.motor_development import (
     process_motorical_score_1,
 )
-
 from preprocessing.motor_scores import (
     motorscore_milestones_setvalue,
     motorscore_impairments_setvalue,
@@ -29,8 +27,7 @@ from preprocessing.motor_scores import (
     motorscore_impairments,
     motorscore_combined,
 )
-
-from preprocessing.preprocessing_categories import (
+from preprocessing.training_categories import (
     build_category_hours_table,
     CATEGORY_COLS,
 )
@@ -274,8 +271,13 @@ def _build_motor_table(motorical_dev: pl.DataFrame, introductory: pl.DataFrame) 
 # ════════════════════════════════════════════════════════════════════════════
 
 def build_master_feature_table(data: dict[str, pl.DataFrame]) -> pl.DataFrame:
+    """
+    Join all feature tables into a single wide master table.
 
-
+    Returns one row per (introductory_id, age) with motor scores, training hours,
+    device usage, medical treatments, therapy category hours, and log-transformed
+    hour features.
+    """
     home_training      = data["home_training"]
     intensive_therapies = data["intensive_therapies"]
     motorical_dev      = data["motorical_development"]
@@ -345,23 +347,17 @@ def build_master_feature_table(data: dict[str, pl.DataFrame]) -> pl.DataFrame:
         .join(medical_df,       on=["introductory_id", "age"], how="left")
         .join(category_hours_df, on=["introductory_id", "age"], how="left")
         .fill_null(0)
-        # ── log1p-transformerade timmar ──────────────────────────────────────
+        # ── log1p-transformed hours ───────────────────────────────────────────
         .with_columns([
             (pl.col("total_home_training_hours") + 1).log(base=2.718281828).alias("log_total_home_training_hours"),
             (pl.col("total_other_training_hours") + 1).log(base=2.718281828).alias("log_total_other_training_hours"),
             (pl.col("active_total_hours") + 1).log(base=2.718281828).alias("log_active_total_hours"),
             (pl.col("neurohab_hours") + 1).log(base=2.718281828).alias("log_neurohab_hours"),
-        ])
-        .with_columns([
-            (pl.col("total_home_training_hours") + 1).log(base=2.718281828).alias("log_total_home_training_hours"),
-            (pl.col("total_other_training_hours") + 1).log(base=2.718281828).alias("log_total_other_training_hours"),
-            (pl.col("active_total_hours") + 1).log(base=2.718281828).alias("log_active_total_hours"),
-            (pl.col("neurohab_hours") + 1).log(base=2.718281828).alias("log_neurohab_hours"),
-            # ── log1p för terapikategorier ──────────────────────────────────────
+            # ── log1p for therapy categories (unclassified excluded) ──────────
             *[
                 (pl.col(c) + 1).log(base=2.718281828).alias(f"log_{c}")
                 for c in CATEGORY_COLS
-                if c != "cat_unclassified"   # unclassified är inte meningsfull som feature
+                if c != "cat_unclassified"
             ],
         ])
         .sort(["introductory_id", "age"])

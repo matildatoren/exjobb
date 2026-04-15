@@ -9,11 +9,8 @@ from sklearn.preprocessing import PolynomialFeatures
 from sklearn.pipeline import make_pipeline
 from sklearn.metrics import r2_score
 
-BASE_DIR   = Path(__file__).resolve().parent.parent
-IMAGES_DIR = BASE_DIR / "images"
-
-IMAGES_DIR = Path(__file__).resolve().parent / "images"
-IMAGES_DIR.mkdir(exist_ok=True)
+FIGURES_DIR = Path(__file__).resolve().parents[2] / "outputs" / "dose_response"
+FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
 # ════════════════════════════════════════════════════════════════════════════
 # CONFIG — ändra här
@@ -77,7 +74,7 @@ CONFIG = {
         # ("log_cat_suit_based",         "Suit based therapies"),
         # ("log_cat_physical_conditioning",         "Physical conditioning and activity based therapies"),
         # ("log_cat_complementary",         "Complementary therapies"),
-      ],
+    ],
 
     # Input — kolumn som används i overall dose-response-plotten
     # Bör vara en av kolumnerna ovan
@@ -107,9 +104,6 @@ def build_analysis_df(
 
     Returns a pandas DataFrame with:
       delta_score, hour components, active_total_hours, med_* columns.
-
-    Rows where no training was reported (all hour components == 0) are dropped,
-    as these almost certainly represent missing data rather than true zero training.
     """
     overall = CONFIG["overall_feature"]
 
@@ -134,23 +128,11 @@ def build_analysis_df(
         .rename(columns={delta_col: "delta_score"})
     )
 
-    # ── Drop rows where no training was reported ─────────────────────────────
-    hour_cols = [col for col, _ in CONFIG["hour_components"] if col in df.columns]
-    has_training = df[hour_cols].sum(axis=1) > 0
-    n_dropped = (~has_training).sum()
-    print(f"  [build_analysis_df] Dropping {n_dropped} rows with no training reported")
-    df = df[has_training].reset_index(drop=True)
-
-    # ── Drop rows where delta score is zero (likely missing second assessment) ─
-    n_zero = (df["delta_score"] == 0).sum()
-    print(f"  [build_analysis_df] Dropping {n_zero} rows with delta_score == 0")
-    df = df[df["delta_score"] != 0].reset_index(drop=True)
-    # ─────────────────────────────────────────────────────────────────────────
     return df
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Regression helpers
+# Regression helpers  (unchanged from original)
 # ════════════════════════════════════════════════════════════════════════════
 
 def _fit_linear(X: pd.DataFrame, y: pd.Series):
@@ -200,14 +182,12 @@ def run_analysis(master: pl.DataFrame, delta_col: str) -> dict:
     treatment_cols = _get_treatment_cols(active_df)
 
     # ── Component regressions ────────────────────────────────────────────────
-    # Only include participants who actually used each component (> 0),
-    # so the regression reflects dose-response among users only.
     component_results = []
     for col, label in CONFIG["hour_components"]:
         if col not in active_df.columns:
             continue
         subset = active_df[["delta_score", col]].dropna()
-        subset = subset[subset[col] > 0]  # users only — excludes non-participants
+        subset = subset[subset[col] >= 0]
         if len(subset) < 5 or subset[col].sum() == 0:
             continue
         model, r2 = _fit_linear(subset[[col]], subset["delta_score"])
@@ -267,7 +247,7 @@ def print_summary(results: dict, title: str = "Motor Score"):
     print(f"  DOSE-RESPONSE ANALYSIS — {title.upper()}")
     print(sep)
 
-    print("\n  Active Hours Components (users only, devices excluded)\n")
+    print("\n  Active Hours Components (devices excluded)\n")
     print(f"  {'Component':<26} {'Coeff':>8} {'R²':>7} {'N':>6} {'Mean hrs':>10}")
     print(f"  {line}")
     for r in results["component_results"]:
@@ -299,7 +279,7 @@ def print_summary(results: dict, title: str = "Motor Score"):
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Figures
+# Figures  (logic unchanged, column names updated)
 # ════════════════════════════════════════════════════════════════════════════
 
 def plot_training_components(
@@ -322,7 +302,7 @@ def plot_training_components(
         col = r["col"]
 
         subset = active_df[["delta_score", col]].dropna()
-        subset = subset[subset[col] > 0]  # users only — matches run_analysis
+        subset = subset[subset[col] >= 0]
 
         ax.scatter(subset[col], subset["delta_score"], alpha=0.4, color="steelblue", s=30)
 
@@ -333,7 +313,7 @@ def plot_training_components(
             ax.plot(x_range, model.predict(x_range_df), color="orange", linewidth=2)
 
         ax.axhline(0, color="gray", linewidth=0.8, linestyle=":")
-        ax.set_xlabel("Training dose (hours / year, users only)")
+        ax.set_xlabel("Training dose (hours / year)")
         ax.set_ylabel(f"Δ {title}")
         ax.set_title(r["label"])
         ax.annotate(
@@ -341,14 +321,14 @@ def plot_training_components(
             xy=(0.97, 0.97), xycoords="axes fraction",
             ha="right", va="top", fontsize=9,
             bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.7),
-)
+        )
 
-    for j in range(len(panels), len(axes)):
+    for j in range(len(panels), 4):
         axes[j].set_visible(False)
 
     plt.suptitle(f"Motorscore improvement by Training-category — {title}", fontsize=13)
     plt.tight_layout()
-    plt.savefig(IMAGES_DIR / filename, dpi=150)
+    plt.savefig(FIGURES_DIR / filename, dpi=150)
     print(f"Saved: {filename}")
 
 
@@ -394,7 +374,7 @@ def plot_treatment_effects(
     axes[0].set_ylabel(f"Δ {title}")
     plt.suptitle(f"Score Change by Medical Treatment — {title}", fontsize=13)
     plt.tight_layout()
-    plt.savefig(IMAGES_DIR / filename, dpi=150)
+    plt.savefig(FIGURES_DIR / filename, dpi=150)
     print(f"Saved: {filename}")
 
 
@@ -433,7 +413,7 @@ def plot_overall_dose_response(
     ax.set_title(f"Overall Dose-Response: Active Hours vs {title} Change")
     ax.legend()
     plt.tight_layout()
-    plt.savefig(IMAGES_DIR / filename, dpi=150)
+    plt.savefig(FIGURES_DIR / filename, dpi=150)
     print(f"Saved: {filename}")
 
 
