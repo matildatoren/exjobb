@@ -102,6 +102,59 @@ it_old_filtered = it_old[
 # HELPER FUNCTIONS
 # ---------------------------
 
+def compute_intensive_training_status(it_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Summarise intensive therapy participation per child based on
+    participate_therapies_neurohabilitation.
+
+    Rules:
+    - Yes if the child has at least one row with Yes
+    - No if the child has data but no Yes
+    - No data if all values are missing/empty
+    """
+    col = "participate_therapies_neurohabilitation"
+
+    if col not in it_df.columns:
+        return pd.DataFrame(columns=["id", "intensive_training"])
+
+    tmp = it_df[["introductory_id", col]].copy()
+
+    def normalize(x):
+        if pd.isna(x):
+            return None
+        if isinstance(x, str):
+            val = x.strip().lower()
+            if val in {"yes", "ja", "true", "1"}:
+                return "Yes"
+            if val in {"no", "nej", "false", "0"}:
+                return "No"
+            return x.strip()
+        return str(x)
+
+    tmp[col] = tmp[col].apply(normalize)
+
+    def summarise(values):
+        vals = [v for v in values if v not in [None, ""]]
+        if not vals:
+            return "No data"
+        if "Yes" in vals:
+            return "Yes"
+        if "No" in vals:
+            return "No"
+        return ", ".join(sorted(set(vals)))
+
+    out = (
+        tmp.groupby("introductory_id")[col]
+        .apply(summarise)
+        .reset_index()
+        .rename(columns={
+            "introductory_id": "id",
+            col: "intensive_training"
+        })
+    )
+
+    return out
+
 def _is_filled(x) -> bool:
     """
     Returnerar True om fältet anses ifyllt.
@@ -373,6 +426,7 @@ with tab1:
 
     # --- Compute progress early so we can use it for the "completed" metric ---
     progress = compute_progress_percent(intro, ht, it, md)
+    intensive_status = compute_intensive_training_status(it)
     intro_with_progress = intro.merge(progress[["id", "progress_pct"]], on="id", how="left")
     intro_with_progress["progress_pct"] = intro_with_progress["progress_pct"].fillna(0)
     intro_with_progress["_date"] = pd.to_datetime(intro_with_progress["created_at"]).dt.date
@@ -395,7 +449,23 @@ with tab1:
     )
     delta_fully_completed = fully_completed - fully_completed_yesterday
 
-    col1, col2, col3 = st.columns(3)
+    completed_ids = intro_with_progress.loc[
+    (intro_with_progress["completed"] == True) |
+    (intro_with_progress["progress_pct"] >= 100),
+    "id"
+]
+
+    completed_intensive = intensive_status[intensive_status["id"].isin(completed_ids)]
+
+    n_completed_with_data = (completed_intensive["intensive_training"] != "No data").sum()
+    n_completed_yes = (completed_intensive["intensive_training"] == "Yes").sum()
+
+    intensive_yes_pct = (
+        100 * n_completed_yes / n_completed_with_data
+        if n_completed_with_data > 0 else 0
+    )
+
+    col1, col2, col3, col4 = st.columns(4)
     col1.metric("Total participants", total, delta=int(delta_total))
     col3.metric("Submitted surveys", int(submitted), delta=int(delta_submitted))
     col2.metric(
@@ -404,6 +474,11 @@ with tab1:
         delta=int(delta_fully_completed),
         help="Surveys that are submitted or filled to 100%",
     )
+    col4.metric(
+    "Completed with intensive therapy",
+    f"{intensive_yes_pct:.1f}%",
+    help=f"{n_completed_yes} of {n_completed_with_data} completed participants with IT data answered Yes",
+)
 
     st.subheader("Responses over time")
 
@@ -452,10 +527,16 @@ with tab1:
         all_latest,
         on="id",
         how="left"
+    ).merge(
+        intensive_status,
+        on="id",
+        how="left"
     )
+
 
     overview_people["progress_pct"] = overview_people["progress_pct"].fillna(0).round(1)
     overview_people["n_years"] = overview_people["n_years"].fillna(0).astype(int)
+    overview_people["intensive_training"] = overview_people["intensive_training"].fillna("No data")
 
     if "created_at" in overview_people.columns:
         overview_people["created_at"] = pd.to_datetime(overview_people["created_at"])
@@ -470,6 +551,7 @@ with tab1:
         "progress_pct": "Progress (%)",
         "n_years": "Years observed",
         "latest_entry": "Latest Entry",
+        "intensive_training": "Intensive therapy",
     }
     overview_people = overview_people.rename(columns={k: v for k, v in rename_map.items() if k in overview_people.columns})
 
