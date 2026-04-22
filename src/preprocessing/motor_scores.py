@@ -102,6 +102,7 @@ def _gmfcs_lookup(introductory_df: pl.DataFrame) -> dict[str, int]:
     }
 
 
+
 def _extract_milestone_keys_per_age(df: pl.DataFrame) -> pl.DataFrame:
     """Extract and aggregate unique milestone keys per (introductory_id, age)."""
     per_row_keys = [

@@ -48,6 +48,52 @@ _GMFCS_MAP: dict[str, int] = {
     "Not sure / Don't know": 3,  # default to middle of scale
 }
 
+def _apply_age_weight(
+    df: pl.DataFrame,
+    introductory_df: pl.DataFrame,
+    hour_cols: list[str],
+) -> pl.DataFrame:
+    """
+    Creates weighted versions of hour columns based on age bucket:
+      age 1 → × 1  (unchanged)
+      age 2 → × 2  (unchanged)
+      age 3 → × 2  (represents ~2 years: age 3-4)
+      age 4 → × age_max  (barnets faktiska ålder)
+    New columns are named e.g. total_home_training_hours_weighted
+    """
+    # Join age_max from introductory
+    df = df.join(
+        introductory_df.select([
+            pl.col("id").alias("introductory_id"),
+            "age_max"
+        ]),
+        on="introductory_id",
+        how="left"
+    )
+
+    # Build multiplier column
+    df = df.with_columns(
+        pl.when(pl.col("age") == 1).then(pl.lit(1))
+        .when(pl.col("age") == 2).then(pl.lit(1))
+        .when((pl.col("age") == 3) & (pl.col("age_max") >= 4)).then(pl.lit(2))
+        .when((pl.col("age") == 3) & (pl.col("age_max") < 4)).then(pl.lit(1))
+        .when(pl.col("age") == 4).then(pl.col("age_max"))
+        .otherwise(pl.lit(1))
+        .cast(pl.Float64)
+        .alias("_age_weight")
+    )
+
+    # Create weighted columns
+    for col in hour_cols:
+        if col in df.columns:
+            df = df.with_columns(
+                (pl.col(col) * pl.col("_age_weight"))
+                .alias(f"{col}_weighted")
+            )
+
+    return df.drop(["_age_weight", "age_max"])
+
+
 
 def _encode_gmfcs(introductory_df: pl.DataFrame) -> pl.DataFrame:
     mapping_series = pl.Series(
