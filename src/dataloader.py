@@ -22,6 +22,7 @@ class SurveyDatabase:
             id,
             gmfcs_lvl,
             story 
+            first_age
         FROM introductory
         """
         return pl.read_database(query, self.conn)

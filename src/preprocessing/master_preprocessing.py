@@ -48,6 +48,41 @@ _GMFCS_MAP: dict[str, int] = {
     "Not sure / Don't know": 3,  # default to middle of scale
 }
 
+def _apply_age_weight(
+    df: pl.DataFrame,
+    introductory_df: pl.DataFrame,
+    hour_cols: list[str],
+) -> pl.DataFrame:
+    df = df.join(
+        introductory_df.select([pl.col("id").alias("introductory_id"), "first_age"]),
+        on="introductory_id",
+        how="left"
+    )
+
+    # Cast both to numeric before any comparison
+    df = df.with_columns([
+        pl.col("age").cast(pl.Int32, strict=False),
+        pl.col("first_age").cast(pl.Int32, strict=False),
+    ])
+    
+    df = df.with_columns(
+        pl.when(pl.col("age") == 1).then(pl.lit(1))
+        .when(pl.col("age") == 2).then(pl.lit(1))
+        .when((pl.col("age") == 3) & (pl.col("first_age") >= 4)).then(pl.lit(2))
+        .when((pl.col("age") == 3) & (pl.col("first_age") < 4)).then(pl.lit(1))
+        .when(pl.col("age") == 4).then(pl.col("first_age"))
+        .otherwise(pl.lit(1))
+        .cast(pl.Float64)
+        .alias("_age_weight")
+    )
+
+    for col in hour_cols:
+        if col in df.columns:
+            df = df.with_columns(
+                (pl.col(col) * pl.col("_age_weight")).alias(f"{col}_weighted")
+            )
+
+    return df.drop(["_age_weight", "first_age"])
 
 def _encode_gmfcs(introductory_df: pl.DataFrame) -> pl.DataFrame:
     mapping_series = pl.Series(
@@ -278,8 +313,7 @@ def _build_motor_table(motorical_dev: pl.DataFrame, introductory: pl.DataFrame) 
         for c in score_cols
     ])
     
-    return motor
- 
+    return motor 
 # ════════════════════════════════════════════════════════════════════════════
 # Master builder
 # ════════════════════════════════════════════════════════════════════════════
@@ -292,16 +326,16 @@ def build_master_feature_table(data: dict[str, pl.DataFrame]) -> pl.DataFrame:
     device usage, medical treatments, therapy category hours, and log-transformed
     hour features.
     """
-    home_training      = data["home_training"]
+    home_training       = data["home_training"]
     intensive_therapies = data["intensive_therapies"]
-    motorical_dev      = data["motorical_development"]
-    introductory       = data["introductory"]
+    motorical_dev       = data["motorical_development"]
+    introductory        = data["introductory"]
 
     # ── 1. GMFCS static features ────────────────────────────────────────────
     gmfcs_df = _encode_gmfcs(introductory)
 
     # ── 2. Home-training hours (aggregated) ─────────────────────────────────
-    home_hours_df = process_home_training_hours_per_user_per_year(home_training)
+    home_hours_df  = process_home_training_hours_per_user_per_year(home_training)
     other_hours_df = process_other_training_hours_per_user_per_year(home_training)
 
     # ── 3. Device binary table ──────────────────────────────────────────────
@@ -312,10 +346,10 @@ def build_master_feature_table(data: dict[str, pl.DataFrame]) -> pl.DataFrame:
         process_neurohab_hours_per_user_per_age(intensive_therapies)
         .group_by(["introductory_id", "age"])
         .agg(pl.sum("total_hours").alias("total_hours"))
-        .sort(["introductory_id", "age"]))
+        .sort(["introductory_id", "age"])
+    )
     medical_df = process_medical_treatments_per_user_per_age(intensive_therapies)
     medical_df = _prefix_medical_cols(medical_df)
-
 
     # ── 5. Therapy category hours ───────────────────────────────────────────
     category_hours_df = build_category_hours_table(
@@ -341,7 +375,6 @@ def build_master_feature_table(data: dict[str, pl.DataFrame]) -> pl.DataFrame:
         )
         .select(["introductory_id", "age", "active_total_hours"])
     )
- 
 
     # ── 7. All motor scores + delta / lag ────────────────────────────────────
     motor_df = _build_motor_table(motorical_dev, introductory)
@@ -349,23 +382,23 @@ def build_master_feature_table(data: dict[str, pl.DataFrame]) -> pl.DataFrame:
     # ── 8. Join everything ───────────────────────────────────────────────────
     result = (
         motor_df
-        .join(gmfcs_df,       on="introductory_id",           how="left")
-        .join(home_hours_df,  on=["introductory_id", "age"],  how="left")
-        .join(other_hours_df, on=["introductory_id", "age"],  how="left")
-        .join(active_df,      on=["introductory_id", "age"],  how="left")
+        .join(gmfcs_df,        on="introductory_id",          how="left")
+        .join(home_hours_df,   on=["introductory_id", "age"], how="left")
+        .join(other_hours_df,  on=["introductory_id", "age"], how="left")
+        .join(active_df,       on=["introductory_id", "age"], how="left")
         .join(
             neurohab_df.rename({"total_hours": "neurohab_hours"}),
             on=["introductory_id", "age"], how="left",
         )
-        .join(device_binary_df, on=["introductory_id", "age"], how="left")
-        .join(medical_df,       on=["introductory_id", "age"], how="left")
+        .join(device_binary_df,  on=["introductory_id", "age"], how="left")
+        .join(medical_df,        on=["introductory_id", "age"], how="left")
         .join(category_hours_df, on=["introductory_id", "age"], how="left")
-        # ── log1p-transformed hours ───────────────────────────────────────────
+        # ── log1p-transformed hours ──────────────────────────────────────────
         .with_columns([
             (pl.col("total_home_training_hours") + 1).log(base=2.718281828).alias("log_total_home_training_hours"),
             (pl.col("total_other_training_hours") + 1).log(base=2.718281828).alias("log_total_other_training_hours"),
-            (pl.col("active_total_hours") + 1).log(base=2.718281828).alias("log_active_total_hours"),
-            (pl.col("neurohab_hours") + 1).log(base=2.718281828).alias("log_neurohab_hours"),
+            (pl.col("active_total_hours")         + 1).log(base=2.718281828).alias("log_active_total_hours"),
+            (pl.col("neurohab_hours")             + 1).log(base=2.718281828).alias("log_neurohab_hours"),
             # ── log1p for therapy categories (unclassified excluded) ──────────
             *[
                 (pl.col(c) + 1).log(base=2.718281828).alias(f"log_{c}")
@@ -390,6 +423,29 @@ def build_master_feature_table(data: dict[str, pl.DataFrame]) -> pl.DataFrame:
     result = result.with_columns([
         pl.col(c).fill_null(0) for c in fill_cols
     ])
+
+    # ── Weighted hour columns ────────────────────────────────────────────────
+    hour_cols = [
+        "total_home_training_hours",
+        "total_other_training_hours",
+        "neurohab_hours",
+        "active_total_hours",
+    ]
+    result = _apply_age_weight(result, introductory, hour_cols)
+
+    # ── log1p for weighted hour columns ─────────────────────────────────────
+    weighted_cols = [
+        "total_home_training_hours_weighted",
+        "total_other_training_hours_weighted",
+        "neurohab_hours_weighted",
+        "active_total_hours_weighted",
+    ]
+    result = result.with_columns([
+        (pl.col(c) + 1).log(base=2.718281828).alias(f"log_{c}")
+        for c in weighted_cols
+        if c in result.columns
+    ])
+
     return result
 
 

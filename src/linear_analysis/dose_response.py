@@ -40,6 +40,9 @@ CONFIG = {
         "df67e7ea-0b50-408b-9342-4c29d0efa839",
         "30302f7a-c470-47bf-8f0e-d104b3065d99",
         "1950325f-99da-47b4-b49d-735253ba0aaa",
+        "42475b28-2dfd-4114-ac53-d8619881dd2f",
+        "7e68f3b3-509b-4352-8eb1-400c9407ac9b",
+        "4be3b41c-a0b4-4e7b-ae49-896b37ea2052",
     ],
 
     # Output — vilket/vilka motorscores att analysera
@@ -74,10 +77,14 @@ CONFIG = {
 
     # Input — träningskomponenter att inkludera i komponentanalysen
     "hour_components": [
-        ("log_total_home_training_hours",  "Home training"),
-        ("log_total_other_training_hours", "Sports / other"),
-        ("log_neurohab_hours",             "Intensive therapy"),
-        ("log_active_total_hours",         "Combined active total"),
+        # ("log_total_home_training_hours",  "Home training"),
+        # ("log_total_other_training_hours", "Sports / other"),
+        # ("log_neurohab_hours",             "Intensive therapy"),
+        # ("log_active_total_hours",         "Combined active total"),
+        ("log_total_home_training_hours_weighted",  "Home training, weigted"),
+        ("log_total_other_training_hours_weighted", "Sports / other, weighted"),
+        ("log_neurohab_hours_weighted",             "Intensive therapy, weighted"),
+        ("log_active_total_hours_weighted",         "Combined active total, weighted"),    
         # ("log_cat_neurodevelopmental_reflex",         "Neurodevelopmental and Reflex based therapies"),
         # ("log_cat_motor_learning_task",         "Motor learning and task oriented learning"),
         # ("log_cat_technology_assisted",         "Technology assisted therapies"),
