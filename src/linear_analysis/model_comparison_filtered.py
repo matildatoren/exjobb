@@ -62,12 +62,15 @@ FILTER_INTRODUCTORY_IDS = [
         "df67e7ea-0b50-408b-9342-4c29d0efa839",
         "30302f7a-c470-47bf-8f0e-d104b3065d99",
         "1950325f-99da-47b4-b49d-735253ba0aaa",
+        "42475b28-2dfd-4114-ac53-d8619881dd2f",
+        "7e68f3b3-509b-4352-8eb1-400c9407ac9b",
+        "4be3b41c-a0b4-4e7b-ae49-896b37ea2052",
 ]
 
 TARGET = "delta_milestone_score_setvalue"
 TRAINING_FEATURES = [
-    #"age",
-    #"gmfcs_int",
+    "age",
+    "gmfcs_int",
     #"total_home_training_hours",
     #"total_other_training_hours",
     #"active_total_hours",
@@ -84,7 +87,7 @@ TRAINING_FEATURES = [
     #"med_Hand casting",
     #"med_Orthopedic surgery (e.g., tendon lengthening, hip surgery)",
     #"med_Leg casting",
-    #"has_any_medical_treatment",
+    "has_any_medical_treatment",
     "log_total_home_training_hours",
     "log_total_other_training_hours",
     #"log_active_total_hours",
