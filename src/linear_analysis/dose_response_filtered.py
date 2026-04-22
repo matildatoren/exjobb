@@ -68,10 +68,14 @@ CONFIG = {
 
     # Input — träningskomponenter att inkludera i komponentanalysen
     "hour_components": [
-        ("log_total_home_training_hours",  "Home training"),
-        ("log_total_other_training_hours", "Sports / other"),
-        ("log_neurohab_hours",             "Intensive therapy"),
-        ("log_active_total_hours",         "Combined active total"),
+        # ("log_total_home_training_hours",  "Home training"),
+        # ("log_total_other_training_hours", "Sports / other"),
+        # ("log_neurohab_hours",             "Intensive therapy"),
+        # ("log_active_total_hours",         "Combined active total"),
+        ("log_total_home_training_hours_weighted",  "Home training, weigted"),
+        ("log_total_other_training_hours_weighted", "Sports / other, weighted"),
+        ("log_neurohab_hours_weighted",             "Intensive therapy, weighted"),
+        ("log_active_total_hours_weighted",         "Combined active total, weighted"),        
         # ("log_cat_neurodevelopmental_reflex",         "Neurodevelopmental and Reflex based therapies"),
         # ("log_cat_motor_learning_task",         "Motor learning and task oriented learning"),
         # ("log_cat_technology_assisted",         "Technology assisted therapies"),
