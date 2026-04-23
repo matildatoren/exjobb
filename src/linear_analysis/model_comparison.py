@@ -69,8 +69,8 @@ FILTER_INTRODUCTORY_IDS = [
 
 TARGET = "delta_motorical_score"
 TRAINING_FEATURES = [
-    "age",
-    "gmfcs_int",
+    #"age",
+    #"gmfcs_int",
     "has_any_medical_treatment",
     "log_total_home_training_hours",
     "log_total_other_training_hours",
