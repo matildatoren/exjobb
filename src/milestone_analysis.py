@@ -99,14 +99,15 @@ INCLUDE_IDS = [
         "42475b28-2dfd-4114-ac53-d8619881dd2f",
         "7e68f3b3-509b-4352-8eb1-400c9407ac9b",
         "4be3b41c-a0b4-4e7b-ae49-896b37ea2052",
+        "52dac13b-a335-449d-a7db-a58e40b5e213",
 ]
 # Features used to analyze residuals
 TRAINING_FEATURES = [
-    # "total_home_training_hours",
-    # "neurohab_hours",
+    "total_home_training_hours",
+    "neurohab_hours",
     # "has_any_medical_device"
-    # "total_other_training_hours",
-    "active_total_hours",
+    "total_other_training_hours",
+    #"active_total_hours",
     ]
 
 
@@ -221,15 +222,17 @@ def add_model_prediction(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def add_residuals(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Compute residual = actual duration - predicted age.
-    Negative → achieved EARLIER than predicted (good).
-    Positive → achieved LATER than predicted.
-    """
     df = df.copy()
+
+    # ✅ scale training (interpretable units)
+    if "active_total_hours" in df.columns:
+        df["training_100h"] = df["active_total_hours"] / 100
+
     df["residual"] = df["duration"] - df["predicted_age"]
     df["achieved_early"] = (df["residual"] < 0).astype(int)
+
     return df
+
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -276,6 +279,90 @@ def plot_kaplan_meier(df: pd.DataFrame) -> None:
     plt.savefig(out, dpi=150)
     plt.close()
     print(f"Saved: {out}")
+
+def plot_additional_analysis(df: pd.DataFrame) -> None:
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+
+    # ── 1. Observed vs predicted ─────────────────────────────
+    fig, ax = plt.subplots(figsize=(6, 6))
+
+    ax.scatter(df["predicted_age"], df["duration"], alpha=0.7)
+
+    min_val = min(df["predicted_age"].min(), df["duration"].min())
+    max_val = max(df["predicted_age"].max(), df["duration"].max())
+
+    ax.plot([min_val, max_val], [min_val, max_val], "r--", label="Perfect prediction")
+
+    ax.set_xlabel("Predicted age")
+    ax.set_ylabel("Observed age")
+    ax.set_title("Observed vs Predicted milestone age")
+    ax.legend()
+
+    plt.tight_layout()
+    out = OUTPUT_DIR / "observed_vs_predicted.png"
+    plt.savefig(out, dpi=150)
+    plt.close()
+    print(f"Saved: {out}")
+
+
+    # ── 2. Residual vs training ─────────────────────────────
+    if "active_total_hours" in df.columns:
+        fig, ax = plt.subplots(figsize=(6, 5))
+
+        sns.regplot(
+            x="active_total_hours",
+            y="residual",
+            data=df,
+            ax=ax,
+            scatter_kws={"alpha": 0.7},
+            line_kws={"color": "red"},
+        )
+
+        ax.axhline(0, linestyle="--", color="black")
+        ax.set_title("Training vs residual\n(negative = earlier than expected)")
+        ax.set_xlabel("Active training hours")
+        ax.set_ylabel("Residual (actual − predicted)")
+
+        plt.tight_layout()
+        out = OUTPUT_DIR / "residual_vs_training.png"
+        plt.savefig(out, dpi=150)
+        plt.close()
+        print(f"Saved: {out}")
+
+
+    # ── 3. Training distribution ─────────────────────────────
+    if "active_total_hours" in df.columns:
+        fig, ax = plt.subplots(figsize=(6, 5))
+
+        sns.histplot(df["active_total_hours"], bins=15, kde=True, ax=ax)
+
+        ax.set_title("Distribution of training hours")
+        ax.set_xlabel("Active training hours")
+
+        plt.tight_layout()
+        out = OUTPUT_DIR / "training_distribution.png"
+        plt.savefig(out, dpi=150)
+        plt.close()
+        print(f"Saved: {out}")
+
+
+    # ── 4. Duration by GMFCS ─────────────────────────────
+    if "gmfcs_int" in df.columns:
+        fig, ax = plt.subplots(figsize=(6, 5))
+
+        sns.boxplot(x="gmfcs_int", y="duration", data=df, ax=ax)
+
+        ax.set_title("Milestone age by GMFCS level")
+        ax.set_xlabel("GMFCS level")
+        ax.set_ylabel("Age at milestone")
+
+        plt.tight_layout()
+        out = OUTPUT_DIR / "gmfcs_vs_duration.png"
+        plt.savefig(out, dpi=150)
+        plt.close()
+        print(f"Saved: {out}")
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -495,6 +582,13 @@ def main() -> None:
 
     print("\nRunning logistic regression (early vs late)...")
     run_logistic(df)
+
+    print("\nPlotting residual analysis...")
+    plot_residuals(df)
+
+    print("\nPlotting additional analysis...")
+    plot_additional_analysis(df)
+
 
     print(f"\nDone. All outputs saved to: {OUTPUT_DIR.resolve()}")
 
