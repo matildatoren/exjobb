@@ -99,14 +99,22 @@ INCLUDE_IDS = [
         "42475b28-2dfd-4114-ac53-d8619881dd2f",
         "7e68f3b3-509b-4352-8eb1-400c9407ac9b",
         "4be3b41c-a0b4-4e7b-ae49-896b37ea2052",
+        "52dac13b-a335-449d-a7db-a58e40b5e213",
 ]
 # Features used to analyze residuals
 TRAINING_FEATURES = [
-    # "total_home_training_hours",
-    # "neurohab_hours",
-    # "has_any_medical_device"
-    # "total_other_training_hours",
-    "active_total_hours",
+    #"total_home_training_hours",
+    #"neurohab_hours",
+    #"has_any_medical_device"
+    #"total_other_training_hours",
+    #"active_total_hours",
+    "cat_neurodevelopmental_reflex",
+    "cat_motor_learning_task",
+    "cat_technology_assisted",
+    #"cat_suit_based",
+    "cat_physical_conditioning",
+    "cat_complementary"
+    "cat_unclassified"
     ]
 
 
@@ -221,15 +229,17 @@ def add_model_prediction(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def add_residuals(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Compute residual = actual duration - predicted age.
-    Negative → achieved EARLIER than predicted (good).
-    Positive → achieved LATER than predicted.
-    """
     df = df.copy()
+
+    # ✅ scale training (interpretable units)
+    if "active_total_hours" in df.columns:
+        df["training_100h"] = df["active_total_hours"] / 100
+
     df["residual"] = df["duration"] - df["predicted_age"]
     df["achieved_early"] = (df["residual"] < 0).astype(int)
+
     return df
+
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -254,28 +264,118 @@ def plot_kaplan_meier(df: pd.DataFrame) -> None:
     ax.set_ylabel("Proportion not yet achieved")
     ax.legend(fontsize=8)
 
-    # — By training hours (median split)
+    # — By active_total_hours, median split WITHIN each GMFCS stratum
     ax = axes[1]
-    col = "total_home_training_hours"
+    col = "active_total_hours"
     if col in df.columns:
-        median_h = df[col].median()
-        groups = [
-            ("High training hours", df[col] >= median_h),
-            ("Low training hours",  df[col] <  median_h),
-        ]
-        for label, mask in groups:
+        df = df.copy()
+        # Compute median split within each GMFCS group to control for severity
+        df["above_median_hours"] = df.groupby("gmfcs_int")[col].transform(
+            lambda x: x >= x.median()
+        )
+        for label, mask in [
+            ("Above median hours", df["above_median_hours"] == True),
+            ("Below median hours", df["above_median_hours"] == False),
+        ]:
+            if mask.sum() < 3:
+                continue
             kmf = KaplanMeierFitter()
-            kmf.fit(df.loc[mask, "duration"], df.loc[mask, "event"], label=label)
+            kmf.fit(df.loc[mask, "duration"], df.loc[mask, "event"], label=f"{label} (n={mask.sum()})")
             kmf.plot_survival_function(ax=ax)
-        ax.set_title("Time to milestone achievement\nby home training hours (median split)")
+        ax.set_title("Time to milestone achievement\nby total training hours\n(median split within GMFCS stratum)")
         ax.set_xlabel("Age bucket")
         ax.set_ylabel("Proportion not yet achieved")
+        ax.legend(fontsize=8)
 
     plt.tight_layout()
     out = OUTPUT_DIR / "kaplan_meier.png"
     plt.savefig(out, dpi=150)
     plt.close()
     print(f"Saved: {out}")
+
+def plot_additional_analysis(df: pd.DataFrame) -> None:
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+
+    # ── 1. Observed vs predicted ─────────────────────────────
+    fig, ax = plt.subplots(figsize=(6, 6))
+
+    ax.scatter(df["predicted_age"], df["duration"], alpha=0.7)
+
+    min_val = min(df["predicted_age"].min(), df["duration"].min())
+    max_val = max(df["predicted_age"].max(), df["duration"].max())
+
+    ax.plot([min_val, max_val], [min_val, max_val], "r--", label="Perfect prediction")
+
+    ax.set_xlabel("Predicted age")
+    ax.set_ylabel("Observed age")
+    ax.set_title("Observed vs Predicted milestone age")
+    ax.legend()
+
+    plt.tight_layout()
+    out = OUTPUT_DIR / "observed_vs_predicted.png"
+    plt.savefig(out, dpi=150)
+    plt.close()
+    print(f"Saved: {out}")
+
+
+    # ── 2. Residual vs training ─────────────────────────────
+    if "active_total_hours" in df.columns:
+        fig, ax = plt.subplots(figsize=(6, 5))
+
+        sns.regplot(
+            x="active_total_hours",
+            y="residual",
+            data=df,
+            ax=ax,
+            scatter_kws={"alpha": 0.7},
+            line_kws={"color": "red"},
+        )
+
+        ax.axhline(0, linestyle="--", color="black")
+        ax.set_title("Training vs residual\n(negative = earlier than expected)")
+        ax.set_xlabel("Active training hours")
+        ax.set_ylabel("Residual (actual − predicted)")
+
+        plt.tight_layout()
+        out = OUTPUT_DIR / "residual_vs_training.png"
+        plt.savefig(out, dpi=150)
+        plt.close()
+        print(f"Saved: {out}")
+
+
+    # ── 3. Training distribution ─────────────────────────────
+    if "active_total_hours" in df.columns:
+        fig, ax = plt.subplots(figsize=(6, 5))
+
+        sns.histplot(df["active_total_hours"], bins=15, kde=True, ax=ax)
+
+        ax.set_title("Distribution of training hours")
+        ax.set_xlabel("Active training hours")
+
+        plt.tight_layout()
+        out = OUTPUT_DIR / "training_distribution.png"
+        plt.savefig(out, dpi=150)
+        plt.close()
+        print(f"Saved: {out}")
+
+
+    # ── 4. Duration by GMFCS ─────────────────────────────
+    if "gmfcs_int" in df.columns:
+        fig, ax = plt.subplots(figsize=(6, 5))
+
+        sns.boxplot(x="gmfcs_int", y="duration", data=df, ax=ax)
+
+        ax.set_title("Milestone age by GMFCS level")
+        ax.set_xlabel("GMFCS level")
+        ax.set_ylabel("Age at milestone")
+
+        plt.tight_layout()
+        out = OUTPUT_DIR / "gmfcs_vs_duration.png"
+        plt.savefig(out, dpi=150)
+        plt.close()
+        print(f"Saved: {out}")
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -352,15 +452,16 @@ def plot_residuals(df: pd.DataFrame) -> None:
     ax.set_title("Distribution of residuals")
     ax.legend()
 
+    # ── use first available training feature instead of hardcoded name ───────
     ax = axes[1]
-    col = "total_home_training_hours"
-    if col in df.columns:
+    col = available[0] if available else None
+    if col and col in df.columns:
         df.boxplot(column=col, by="achieved_early", ax=ax,
                    boxprops=dict(color="#2c3e50"),
                    medianprops=dict(color="#e74c3c"))
         ax.set_xticklabels(["Later than predicted\n(residual ≥ 0)",
                              "Earlier than predicted\n(residual < 0)"])
-        ax.set_title("Home training hours by achievement group")
+        ax.set_title(f"{col} by achievement group")
         ax.set_xlabel("")
         plt.suptitle("")
 
@@ -369,7 +470,6 @@ def plot_residuals(df: pd.DataFrame) -> None:
     plt.savefig(out, dpi=150)
     plt.close()
     print(f"Saved: {out}")
-
 
 # ════════════════════════════════════════════════════════════════════════════
 # STEP 6 — Ridge regression on residuals
@@ -495,6 +595,13 @@ def main() -> None:
 
     print("\nRunning logistic regression (early vs late)...")
     run_logistic(df)
+
+    print("\nPlotting residual analysis...")
+    plot_residuals(df)
+
+    print("\nPlotting additional analysis...")
+    plot_additional_analysis(df)
+
 
     print(f"\nDone. All outputs saved to: {OUTPUT_DIR.resolve()}")
 

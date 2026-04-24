@@ -47,11 +47,11 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # ════════════════════════════════════════════════════════════════════════════
 
 # Target variable (what the model predicts)
-TARGET = "delta_motorical_score"
+TARGET = "delta_milestone_score_setvalue"
 
 # Input features (column names from the master feature table)
 INPUT_FEATURES: list[str] = [
-    "active_total_hours",
+    #"active_total_hours",
     "log_total_home_training_hours",
     "log_total_other_training_hours",
     "log_neurohab_hours",
@@ -92,6 +92,7 @@ INCLUDE_IDS: list[str] | None = [
     "42475b28-2dfd-4114-ac53-d8619881dd2f",
     "7e68f3b3-509b-4352-8eb1-400c9407ac9b",
     "4be3b41c-a0b4-4e7b-ae49-896b37ea2052",
+    "52dac13b-a335-449d-a7db-a58e40b5e213",
 ]
 
 # Random Forest hyperparameters
