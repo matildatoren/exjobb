@@ -103,11 +103,18 @@ INCLUDE_IDS = [
 ]
 # Features used to analyze residuals
 TRAINING_FEATURES = [
-    "total_home_training_hours",
-    "neurohab_hours",
-    # "has_any_medical_device"
-    "total_other_training_hours",
+    #"total_home_training_hours",
+    #"neurohab_hours",
+    #"has_any_medical_device"
+    #"total_other_training_hours",
     #"active_total_hours",
+    "cat_neurodevelopmental_reflex",
+    "cat_motor_learning_task",
+    "cat_technology_assisted",
+    #"cat_suit_based",
+    "cat_physical_conditioning",
+    "cat_complementary"
+    "cat_unclassified"
     ]
 
 
@@ -257,22 +264,28 @@ def plot_kaplan_meier(df: pd.DataFrame) -> None:
     ax.set_ylabel("Proportion not yet achieved")
     ax.legend(fontsize=8)
 
-    # — By training hours (median split)
+    # — By active_total_hours, median split WITHIN each GMFCS stratum
     ax = axes[1]
-    col = "total_home_training_hours"
+    col = "active_total_hours"
     if col in df.columns:
-        median_h = df[col].median()
-        groups = [
-            ("High training hours", df[col] >= median_h),
-            ("Low training hours",  df[col] <  median_h),
-        ]
-        for label, mask in groups:
+        df = df.copy()
+        # Compute median split within each GMFCS group to control for severity
+        df["above_median_hours"] = df.groupby("gmfcs_int")[col].transform(
+            lambda x: x >= x.median()
+        )
+        for label, mask in [
+            ("Above median hours", df["above_median_hours"] == True),
+            ("Below median hours", df["above_median_hours"] == False),
+        ]:
+            if mask.sum() < 3:
+                continue
             kmf = KaplanMeierFitter()
-            kmf.fit(df.loc[mask, "duration"], df.loc[mask, "event"], label=label)
+            kmf.fit(df.loc[mask, "duration"], df.loc[mask, "event"], label=f"{label} (n={mask.sum()})")
             kmf.plot_survival_function(ax=ax)
-        ax.set_title("Time to milestone achievement\nby home training hours (median split)")
+        ax.set_title("Time to milestone achievement\nby total training hours\n(median split within GMFCS stratum)")
         ax.set_xlabel("Age bucket")
         ax.set_ylabel("Proportion not yet achieved")
+        ax.legend(fontsize=8)
 
     plt.tight_layout()
     out = OUTPUT_DIR / "kaplan_meier.png"
@@ -439,15 +452,16 @@ def plot_residuals(df: pd.DataFrame) -> None:
     ax.set_title("Distribution of residuals")
     ax.legend()
 
+    # ── use first available training feature instead of hardcoded name ───────
     ax = axes[1]
-    col = "total_home_training_hours"
-    if col in df.columns:
+    col = available[0] if available else None
+    if col and col in df.columns:
         df.boxplot(column=col, by="achieved_early", ax=ax,
                    boxprops=dict(color="#2c3e50"),
                    medianprops=dict(color="#e74c3c"))
         ax.set_xticklabels(["Later than predicted\n(residual ≥ 0)",
                              "Earlier than predicted\n(residual < 0)"])
-        ax.set_title("Home training hours by achievement group")
+        ax.set_title(f"{col} by achievement group")
         ax.set_xlabel("")
         plt.suptitle("")
 
@@ -456,7 +470,6 @@ def plot_residuals(df: pd.DataFrame) -> None:
     plt.savefig(out, dpi=150)
     plt.close()
     print(f"Saved: {out}")
-
 
 # ════════════════════════════════════════════════════════════════════════════
 # STEP 6 — Ridge regression on residuals
