@@ -40,13 +40,6 @@ POSSIBLE_MILESTONES_BY_AGE_GMFCS: dict[int, dict[int, int]] = {
     4: {1: 35, 2: 29, 3: 18, 4: 12, 5:  7},  # I/II gain advanced milestones; IV/V max ~3 gross + 9 fine
 }
 
-# POSSIBLE_MILESTONES_BY_AGE_GMFCS: dict[int, dict[int, int]] = {
-#     1: {1: 35, 2: 35, 3:  35, 4:  35, 5:  35},  # pre-walking: small gap between levels
-#     2: {1: 35, 2: 35, 3: 35, 4:  35, 5:  35},  # IV/V gain only fine motor; III walks but can't run
-#     3: {1: 35, 2: 35, 3: 35, 4: 35, 5:  35},  # III plateaus (no running/jumping); IV/V fine motor only
-#     4: {1: 35, 2: 35, 3: 35, 4: 35, 5:  35},  # I/II gain advanced milestones; IV/V max ~3 gross + 9 fine
-# }
-
 N_NAMED_BY_AGE_GMFCS: dict[int, dict[int, int]] = {
     # ┌─────────────────────────────────────────────────────────────────────────┐
     # │ Lower-body gait impairments (7 named):                                  │
@@ -71,13 +64,6 @@ N_NAMED_BY_AGE_GMFCS: dict[int, dict[int, int]] = {
     4: {1: 18, 2: 18, 3: 16, 4: 11, 5:  8},  # I/II: 7 gait + 11 upper = 18; IV/V: 0 gait + 11/8 upper
 }
 
-# N_NAMED_BY_AGE_GMFCS: dict[int, dict[int, int]] = {
-#     1: {1: 18, 2: 18, 3: 18, 4: 18, 5:  18},  # no walking yet; 3 gait signs + 6 upper for I/II
-#     2: {1: 18, 2: 18, 3: 18, 4: 18, 5:  18},  # I/II: 6 gait + 10 upper; IV/V: 0 gait + 11/7 upper
-#     3: {1: 18, 2: 18, 3: 18, 4: 18, 5:  18},  # I/II: all 7 gait + 10 upper; III: 5 gait + 10 upper
-#     4: {1: 18, 2: 18, 3: 18, 4: 18, 5:  18},  # I/II: 7 gait + 11 upper = 18; IV/V: 0 gait + 11/8 upper
-# }
-
 _GMFCS_STR_TO_INT: dict[str, int] = {
     "Level I – Walks without limitations": 1,
     "Level II – Walks with some limitations": 2,
@@ -86,6 +72,98 @@ _GMFCS_STR_TO_INT: dict[str, int] = {
     "Level V – Severe limitations, needs full assistance for mobility": 5,
     "Not sure / Don't know": 3,  # default to middle of scale
 }
+
+#----dynamic max builders-------
+def build_dynamic_milestone_ceiling(
+    df: pl.DataFrame,
+    introductory_df: pl.DataFrame,
+    fallback: dict[int, dict[int, int]] = POSSIBLE_MILESTONES_BY_AGE_GMFCS,
+) -> dict[int, dict[int, int]]:
+    """
+    Builds a ceiling table {age: {gmfcs_level: max_observed_milestones}}
+    from the actual data. Falls back to hardcoded values where no data exists.
+    """
+    # Get cumulative milestones per (introductory_id, age)
+    per_age = _extract_milestone_keys_per_age(df)
+    cum = _cumulate_milestones(per_age)
+
+    # Join GMFCS level
+    gmfcs = _gmfcs_lookup(introductory_df)
+    gmfcs_series = [gmfcs.get(uid) for uid in cum["introductory_id"].to_list()]
+
+    cum = cum.with_columns(pl.Series("gmfcs_int", gmfcs_series))
+
+    # Max observed milestones per (age, gmfcs_level)
+    maxima = (
+        cum.filter(pl.col("gmfcs_int").is_not_null())
+        .group_by(["age", "gmfcs_int"])
+        .agg(pl.col("cum_unique_milestones").max().alias("max_milestones"))
+    )
+
+    # Build the dict, filling from fallback where missing
+    result: dict[int, dict[int, int]] = {}
+    for age in range(1, 5):
+        result[age] = {}
+        for level in range(1, 6):
+            result[age][level] = fallback[age][level]  # default
+
+    for age, level, max_val in zip(
+        maxima["age"].to_list(),
+        maxima["gmfcs_int"].to_list(),
+        maxima["max_milestones"].to_list(),
+    ):
+        if max_val is not None:
+            result[int(age)][int(level)] = int(max_val)
+
+    return result
+
+
+def build_dynamic_impairment_ceiling(
+    df: pl.DataFrame,
+    introductory_df: pl.DataFrame,
+    upper_col: str = "motorical_impairments_upper",
+    lower_col: str = "motorical_impairments_lower",
+    fallback: dict[int, dict[int, int]] = N_NAMED_BY_AGE_GMFCS,
+) -> dict[int, dict[int, int]]:
+    """
+    Builds a ceiling table {age: {gmfcs_level: max_observed_impairment_count}}
+    from the actual data. Falls back to hardcoded values where missing.
+    """
+    row_n_selected = [
+        count_impairments(u) + count_impairments(lo)
+        for u, lo in zip(df[upper_col].to_list(), df[lower_col].to_list())
+    ]
+
+    gmfcs = _gmfcs_lookup(introductory_df)
+    gmfcs_series = [gmfcs.get(uid) for uid in df["introductory_id"].to_list()]
+
+    per_age = (
+        df.with_columns([
+            pl.Series("_n_selected", row_n_selected),
+            pl.Series("gmfcs_int", gmfcs_series),
+        ])
+        .filter(pl.col("gmfcs_int").is_not_null())
+        .group_by(["introductory_id", "age", "gmfcs_int"])
+        .agg(pl.col("_n_selected").sum().alias("n_selected"))
+        .group_by(["age", "gmfcs_int"])
+        .agg(pl.col("n_selected").max().alias("max_n_selected"))
+    )
+
+    result: dict[int, dict[int, int]] = {}
+    for age in range(1, 5):
+        result[age] = {}
+        for level in range(1, 6):
+            result[age][level] = fallback[age][level]  # default
+
+    for age, level, max_val in zip(
+        per_age["age"].to_list(),
+        per_age["gmfcs_int"].to_list(),
+        per_age["max_n_selected"].to_list(),
+    ):
+        if max_val is not None:
+            result[int(age)][int(level)] = int(max_val)
+
+    return result
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -236,18 +314,45 @@ def motorscore_milestones_setvalue(
     introductory_df: pl.DataFrame,
 ) -> pl.DataFrame:
     """
-    milestone_score = cum_unique_milestones / possible_milestones
+    milestone_score = cum_unique_milestones / dynamic_ceiling
 
-    Ceiling looked up from POSSIBLE_MILESTONES_BY_AGE_GMFCS using the
-    age bucket (1–4, as stored in DB) and the child's GMFCS level.
-    Returns 0..1 per (introductory_id, age).
+    Ceiling is the maximum observed milestones per (age, gmfcs_level) in the
+    passed dataset, with a floor at the hardcoded POSSIBLE_MILESTONES_BY_AGE_GMFCS
+    values. Falls back to GMFCS III if level is unknown.
+    Returns 0..1+ per (introductory_id, age).
     """
     per_age = _extract_milestone_keys_per_age(df)
     cum     = _cumulate_milestones(per_age)
     gmfcs   = _gmfcs_lookup(introductory_df)
 
+    # ── Build dynamic ceiling ─────────────────────────────────────────────────
+    gmfcs_series = [gmfcs.get(uid) for uid in cum["introductory_id"].to_list()]
+
+    maxima = (
+        cum.with_columns(pl.Series("gmfcs_int", gmfcs_series))
+        .filter(pl.col("gmfcs_int").is_not_null())
+        .group_by(["age", "gmfcs_int"])
+        .agg(pl.col("cum_unique_milestones").max().alias("max_milestones"))
+    )
+
+    dynamic_ceiling: dict[int, dict[int, int]] = {
+        age: {**POSSIBLE_MILESTONES_BY_AGE_GMFCS[age]}
+        for age in range(1, 5)
+    }
+    for age, level, max_val in zip(
+        maxima["age"].to_list(),
+        maxima["gmfcs_int"].to_list(),
+        maxima["max_milestones"].to_list(),
+    ):
+        if max_val is not None:
+            dynamic_ceiling[int(age)][int(level)] = max(
+                dynamic_ceiling[int(age)][int(level)],
+                int(max_val),
+            )
+
+    # ── Score ─────────────────────────────────────────────────────────────────
     possible = [
-        int(POSSIBLE_MILESTONES_BY_AGE_GMFCS[int(age)].get(gmfcs.get(uid) or 3))
+        int(dynamic_ceiling[int(age)].get(gmfcs.get(uid) or 3))
         for uid, age in zip(cum["introductory_id"].to_list(), cum["age"].to_list())
     ]
 
@@ -258,7 +363,7 @@ def motorscore_milestones_setvalue(
             .cast(pl.Float64)
             .alias("milestone_score")
         )
-        .select(["introductory_id", "age", "cum_unique_milestones", "milestone_score"])
+        .select(["introductory_id", "age", "cum_unique_milestones", "possible_milestones", "milestone_score"])
         .sort(["introductory_id", "age"])
     )
 
@@ -272,66 +377,82 @@ def motorscore_impairments_setvalue(
     """
     mms_normalized = (max_score - sum_ratings) / max_score
 
-    n_named looked up from N_NAMED_BY_AGE_GMFCS using the age bucket
-    (1–4, as stored in DB) and the child's GMFCS level.
-    Returns 0..1 per (introductory_id, age).
+    Ceiling (n_named) is the maximum observed impairment count per (age, gmfcs_level)
+    in the passed dataset, with a floor at the hardcoded N_NAMED_BY_AGE_GMFCS values.
+    Falls back to GMFCS III if level is unknown.
+    Returns 0..1 per (introductory_id, age), where 1 = no impairments.
     """
-    row_sum_ratings: list[float] = []
-    row_other_keys: list[list[str]] = []
-    row_n_selected: list[int] = []
+    # ── Per-row extraction ────────────────────────────────────────────────────
+    row_sum_ratings = [
+        sum_impairments(u) + sum_impairments(lo)
+        for u, lo in zip(df[upper_col].to_list(), df[lower_col].to_list())
+    ]
+    row_n_selected = [
+        count_impairments(u) + count_impairments(lo)
+        for u, lo in zip(df[upper_col].to_list(), df[lower_col].to_list())
+    ]
 
-    for u, lo in zip(df[upper_col].to_list(), df[lower_col].to_list()):
-        row_sum_ratings.append(sum_impairments(u) + sum_impairments(lo))
-        row_n_selected.append(count_impairments(u) + count_impairments(lo))
-        row_other_keys.append([])  # "other" keys not applicable for setvalue version
+    gmfcs       = _gmfcs_lookup(introductory_df)
+    gmfcs_series = [gmfcs.get(uid) for uid in df["introductory_id"].to_list()]
 
-    per_age = (
+    # ── Build dynamic ceiling ─────────────────────────────────────────────────
+    maxima = (
         df.with_columns([
-            pl.Series("_sum_ratings", row_sum_ratings),
-            pl.Series("_other_keys", row_other_keys),
             pl.Series("_n_selected", row_n_selected),
+            pl.Series("gmfcs_int",   gmfcs_series),
         ])
+        .filter(pl.col("gmfcs_int").is_not_null())
+        .group_by(["introductory_id", "age", "gmfcs_int"])
+        .agg(pl.col("_n_selected").sum().alias("n_selected"))
+        .group_by(["age", "gmfcs_int"])
+        .agg(pl.col("n_selected").max().alias("max_n_selected"))
+    )
+
+    dynamic_ceiling: dict[int, dict[int, int]] = {
+        age: {**N_NAMED_BY_AGE_GMFCS[age]}
+        for age in range(1, 5)
+    }
+    for age, level, max_val in zip(
+        maxima["age"].to_list(),
+        maxima["gmfcs_int"].to_list(),
+        maxima["max_n_selected"].to_list(),
+    ):
+        if max_val is not None:
+            dynamic_ceiling[int(age)][int(level)] = max(
+                dynamic_ceiling[int(age)][int(level)],
+                int(max_val),
+            )
+
+    # ── Aggregate per (introductory_id, age) ─────────────────────────────────
+    per_age = (
+        df.with_columns(pl.Series("_sum_ratings", row_sum_ratings))
         .group_by(["introductory_id", "age"])
-        .agg([
-            pl.col("_sum_ratings").mean().alias("sum_ratings"),
-            pl.col("_n_selected").mean().alias("n_selected"),
-            pl.col("_other_keys").explode().drop_nulls().unique().alias("other_keys_age"),
-        ])
+        .agg(pl.col("_sum_ratings").sum().alias("sum_ratings"))
         .sort(["introductory_id", "age"])
     )
 
-    gmfcs = _gmfcs_lookup(introductory_df)
-
+    # ── Score ─────────────────────────────────────────────────────────────────
     n_named_list, max_score_list, mms_list, mms_norm_list = [], [], [], []
 
-    for uid, age, s, n_sel, o_keys in zip(
+    for uid, age, s in zip(
         per_age["introductory_id"].to_list(),
         per_age["age"].to_list(),
         per_age["sum_ratings"].to_list(),
-        per_age["n_selected"].to_list(),
-        per_age["other_keys_age"].to_list(),
     ):
         gmfcs_int = gmfcs.get(uid)
         if gmfcs_int is None:
-            n_named = round(sum(N_NAMED_BY_AGE_GMFCS[int(age)].values()) / len(N_NAMED_BY_AGE_GMFCS[int(age)]))
+            n_named = round(sum(dynamic_ceiling[int(age)].values()) / len(dynamic_ceiling[int(age)]))
         else:
-            n_named = N_NAMED_BY_AGE_GMFCS[int(age)].get(gmfcs_int, 18)
+            n_named = dynamic_ceiling[int(age)].get(gmfcs_int, N_NAMED_BY_AGE_GMFCS[int(age)][3])
 
-        n_other   = len(o_keys) if o_keys else 0
-        n_total   = n_named + n_other
-        n_selected = int(round(n_sel)) if n_sel else 0
+        max_score = n_named * 5
+        mms       = max_score - s
+        mms_norm  = (mms / max_score) if max_score > 0 else None
 
-        presence_ratio = n_selected / n_total if n_total > 0 else 0.0
-        mean_severity  = (s / n_selected) if n_selected > 0 else 0.0
-        severity_ratio = (mean_severity - 1) / 4 if n_selected > 0 else 0.0
-
-        impairment_burden = (presence_ratio + severity_ratio) / 2
-        mms_norm = max(0.0, min(1.0, 1 - impairment_burden))
-
-        n_named_list.append(n_total)
-        max_score_list.append(n_total * 5)
-        mms_list.append(float(n_total * 5 - s))
-        mms_norm_list.append(mms_norm)
+        n_named_list.append(n_named)
+        max_score_list.append(max_score)
+        mms_list.append(float(mms))
+        mms_norm_list.append(float(mms_norm) if mms_norm is not None else None)
 
     return (
         per_age
@@ -347,7 +468,6 @@ def motorscore_impairments_setvalue(
         ])
         .sort(["introductory_id", "age"])
     )
-
 
 
 def motorscore_combined(
