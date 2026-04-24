@@ -271,68 +271,47 @@ def motorscore_impairments_setvalue(
 ) -> pl.DataFrame:
     """
     mms_normalized = (max_score - sum_ratings) / max_score
-
+ 
     n_named looked up from N_NAMED_BY_AGE_GMFCS using the age bucket
     (1–4, as stored in DB) and the child's GMFCS level.
     Returns 0..1 per (introductory_id, age).
     """
-    row_sum_ratings: list[float] = []
-    row_other_keys: list[list[str]] = []
-    row_n_selected: list[int] = []
-
-    for u, lo in zip(df[upper_col].to_list(), df[lower_col].to_list()):
-        row_sum_ratings.append(sum_impairments(u) + sum_impairments(lo))
-        row_n_selected.append(count_impairments(u) + count_impairments(lo))
-        row_other_keys.append([])  # "other" keys not applicable for setvalue version
-
+    row_sum_ratings = [
+        sum_impairments(u) + sum_impairments(lo)
+        for u, lo in zip(df[upper_col].to_list(), df[lower_col].to_list())
+    ]
+ 
     per_age = (
-        df.with_columns([
-            pl.Series("_sum_ratings", row_sum_ratings),
-            pl.Series("_other_keys", row_other_keys),
-            pl.Series("_n_selected", row_n_selected),
-        ])
+        df.with_columns(pl.Series("_sum_ratings", row_sum_ratings))
         .group_by(["introductory_id", "age"])
-        .agg([
-            pl.col("_sum_ratings").mean().alias("sum_ratings"),
-            pl.col("_n_selected").mean().alias("n_selected"),
-            pl.col("_other_keys").explode().drop_nulls().unique().alias("other_keys_age"),
-        ])
+        .agg(pl.col("_sum_ratings").sum().alias("sum_ratings"))
         .sort(["introductory_id", "age"])
     )
-
+ 
     gmfcs = _gmfcs_lookup(introductory_df)
-
+ 
     n_named_list, max_score_list, mms_list, mms_norm_list = [], [], [], []
-
-    for uid, age, s, n_sel, o_keys in zip(
+ 
+    for uid, age, s in zip(
         per_age["introductory_id"].to_list(),
         per_age["age"].to_list(),
         per_age["sum_ratings"].to_list(),
-        per_age["n_selected"].to_list(),
-        per_age["other_keys_age"].to_list(),
     ):
         gmfcs_int = gmfcs.get(uid)
         if gmfcs_int is None:
+            # Unknown GMFCS — use mean across all levels
             n_named = round(sum(N_NAMED_BY_AGE_GMFCS[int(age)].values()) / len(N_NAMED_BY_AGE_GMFCS[int(age)]))
         else:
             n_named = N_NAMED_BY_AGE_GMFCS[int(age)].get(gmfcs_int, 18)
-
-        n_other   = len(o_keys) if o_keys else 0
-        n_total   = n_named + n_other
-        n_selected = int(round(n_sel)) if n_sel else 0
-
-        presence_ratio = n_selected / n_total if n_total > 0 else 0.0
-        mean_severity  = (s / n_selected) if n_selected > 0 else 0.0
-        severity_ratio = (mean_severity - 1) / 4 if n_selected > 0 else 0.0
-
-        impairment_burden = (presence_ratio + severity_ratio) / 2
-        mms_norm = max(0.0, min(1.0, 1 - impairment_burden))
-
-        n_named_list.append(n_total)
-        max_score_list.append(n_total * 5)
-        mms_list.append(float(n_total * 5 - s))
-        mms_norm_list.append(mms_norm)
-
+        max_score = n_named * 5
+        mms       = max_score - s
+        mms_norm  = (mms / max_score) if max_score > 0 else None
+ 
+        n_named_list.append(n_named)
+        max_score_list.append(max_score)
+        mms_list.append(float(mms))
+        mms_norm_list.append(float(mms_norm) if mms_norm is not None else None)
+ 
     return (
         per_age
         .with_columns([
@@ -347,7 +326,6 @@ def motorscore_impairments_setvalue(
         ])
         .sort(["introductory_id", "age"])
     )
-
 
 
 def motorscore_combined(
