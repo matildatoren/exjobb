@@ -1,5 +1,6 @@
 # Important note:
-# This is not an objective clinical measure, but an LLM-derived summary score.
+# This is not an objective clinical measure, but an LLM-derived summary score
+# intentionally designed to be comparable to the project's rule-based motor scores.
 
 from typing import List, Literal
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
@@ -7,7 +8,7 @@ import time
 
 import polars as pl
 from ollama import chat
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import sys
 from pathlib import Path
@@ -69,7 +70,9 @@ OUTPUT_CSV_PATH = OUTPUT_DIR / "llm_motorscore_results.csv"
 # ---------------------------
 
 class MotorAssessment(BaseModel):
-    motor_score_1_to_10: int
+    llm_milestone_score: float = Field(ge=0.0, le=1.0)
+    llm_impairment_score: float = Field(ge=0.0, le=1.0)
+    llm_combined_score: float = Field(ge=0.0, le=1.0)
     confidence: Literal["low", "medium", "high"]
     summary: str
     supporting_evidence: List[str]
@@ -80,7 +83,7 @@ class MotorAssessment(BaseModel):
 # ---------------------------
 
 FEW_SHOT_EXAMPLES = [
-    # Example 1 — Score 10: all milestones, no impairments
+    # Example 1 — Very high function
     {
         "input": """Assess motor development for this record:
 
@@ -103,10 +106,23 @@ Motorical impairments (upper):
 Story:
 The child's motor development has consistently been at or above the expected level for their age. No motor concerns have been raised by parents, physiotherapists, or preschool staff. The child participates fully in all physical activities with peers, including running games, climbing, and ball sports.""",
 
-        "output": '{"motor_score_1_to_10": 10, "confidence": "high", "summary": "The child has achieved all 21 gross motor and all 14 age-appropriate fine motor milestones, with no lower or upper body impairments reported. Motor function is fully intact and consistent with the highest functional level.", "supporting_evidence": ["All 21 gross motor milestones achieved, including advanced skills: jumping rope, riding a two-wheeled bike, and accurate throwing and catching", "All 14 age-appropriate fine motor milestones achieved, including correct pencil grasp, scissor use, and copying letters and squares", "No lower-body impairments reported", "No upper-body impairments reported", "Story confirms typical or above-average motor development with no professional concerns"]}',
+        "output": """{
+  "llm_milestone_score": 0.98,
+  "llm_impairment_score": 1.0,
+  "llm_combined_score": 0.99,
+  "confidence": "high",
+  "summary": "The child demonstrates near-maximal milestone attainment and no reported impairments.",
+  "supporting_evidence": [
+    "All or nearly all gross motor milestones are achieved",
+    "All or nearly all fine motor milestones are achieved",
+    "No lower-body impairments are reported",
+    "No upper-body impairments are reported",
+    "The story confirms full participation in age-expected physical activities"
+  ]
+}""",
     },
 
-    # Example 2 — Score 1: no milestones, maximum impairments
+    # Example 2 — Very low function
     {
         "input": """Assess motor development for this record:
 
@@ -129,10 +145,23 @@ Motorical impairments (upper):
 Story:
 Barnet har spastisk tetrapares och är helt beroende av omvårdnad för alla förflyttningar och aktiviteter. Inga funktionella motoriska färdigheter har utvecklats. Barnet kan inte sitta utan stöd och har aldrig stått eller gått. Finmotoriken är extremt begränsad – inget grepp, ingen pekförmåga och inget självständigt hanterande av föremål. Intensiv habilitering pågår utan tydlig funktionell framgång hittills.""",
 
-        "output": '{"motor_score_1_to_10": 1, "confidence": "high", "summary": "The child has achieved no gross or fine motor milestones at age 4, and presents with all lower and upper body impairment dimensions at maximum severity. Motor function is critically impaired with complete dependence on caregivers for all activities.", "supporting_evidence": ["No gross motor milestones achieved — child cannot roll, sit, stand, or walk", "No fine motor milestones achieved — no functional grasping, pointing, or object handling", "Lower-body impairments at maximum severity: spasticity 5/5, muscle weakness 5/5, range of motion 5/5", "Upper-body impairments at maximum severity: spasticity 5/5, muscle weakness 5/5, coordination 5/5", "Story confirms spastic tetraparesis with complete care dependence and no functional motor progress"]}',
+        "output": """{
+  "llm_milestone_score": 0.03,
+  "llm_impairment_score": 0.05,
+  "llm_combined_score": 0.04,
+  "confidence": "high",
+  "summary": "The child shows extremely limited milestone attainment and very severe impairment burden.",
+  "supporting_evidence": [
+    "No gross motor milestones are reported",
+    "No fine motor milestones are reported",
+    "Lower-body impairments are severe across all reported domains",
+    "Upper-body impairments are severe across all reported domains",
+    "The story confirms complete dependence and absence of functional motor development"
+  ]
+}""",
     },
 
-    # Example 3 — Score 7: good milestones, mild impairments
+    # Example 3 — Moderate to good function
     {
         "input": """Assess motor development for this record:
 
@@ -155,10 +184,23 @@ Motorical impairments (upper):
 Story:
 Dziecko chodzi i biega samodzielnie, choć widoczna jest lekka sztywność w lewej nodze podczas szybkiego chodu. Wchodzi po schodach trzymając się poręczy. Zabawa z rówieśnikami przebiega dobrze, dziecko uczestniczy w większości aktywności fizycznych. Terapia fizyczna raz w tygodniu.""",
 
-        "output": '{"motor_score_1_to_10": 7, "confidence": "high", "summary": "The child walks and runs independently and has achieved most gross and fine motor milestones expected at age 3. Mild lower-limb spasticity and mild coordination difficulties are present but do not substantially limit daily function.", "supporting_evidence": ["12 out of the most advanced age-3 gross motor milestones achieved, including running, jumping with both feet, and stair walking", "9 fine motor milestones achieved through copying lines and circles — developmentally appropriate for age 3", "Mild lower-body spasticity (2/5) and minimal muscle weakness (1/5) — functional ambulation maintained", "Mild upper-body coordination difficulty (2/5) — fine motor tasks largely intact", "Story confirms independent walking and running with mild stiffness in one leg; attends physical therapy once weekly"]}',
+        "output": """{
+  "llm_milestone_score": 0.72,
+  "llm_impairment_score": 0.78,
+  "llm_combined_score": 0.75,
+  "confidence": "high",
+  "summary": "The child has good milestone attainment with only mild impairment burden.",
+  "supporting_evidence": [
+    "Many gross motor milestones are achieved, including independent walking, running, jumping, and stair-related skills",
+    "Fine motor milestones are broadly age-appropriate",
+    "Only mild lower-body spasticity and minimal weakness are reported",
+    "Only mild upper-body coordination difficulty is reported",
+    "The story confirms independent mobility with only mild limitations"
+  ]
+}""",
     },
 
-    # Example 4 — Score 4: limited milestones, moderate impairments
+    # Example 4 — Moderately limited function
     {
         "input": """Assess motor development for this record:
 
@@ -181,10 +223,23 @@ Motorical impairments (upper):
 Story:
 Barnet tar några steg inomhus men behöver rollator för längre sträckor och utomhus. Klarar inte att springa, hoppa eller gå i trappor utan hjälp. Finmotoriken är påtagligt begränsad – kan ta föremål men har svårt med precision och bilaterala uppgifter. Behöver assistans vid de flesta ADL-moment. Går på habilitering två gånger i veckan.""",
 
-        "output": '{"motor_score_1_to_10": 4, "confidence": "high", "summary": "The child has achieved only basic early gross motor milestones and a limited set of fine motor skills. Moderate-to-high lower-limb spasticity and moderate upper-body impairments significantly restrict independence, with reliance on a walker for longer distances.", "supporting_evidence": ["Only 5 gross motor milestones achieved — walking indoors without device possible but limited; running, jumping, and stair use not achieved", "Only 4 early fine motor milestones achieved — grasping and pincer present but precision and bilateral tasks impaired", "Lower-body impairments at moderate-to-high severity: spasticity 4/5, muscle weakness 3/5, range of motion 3/5", "Upper-body impairments at moderate severity: spasticity 3/5, muscle weakness 3/5, coordination 4/5", "Story confirms walker-dependent mobility outdoors and significant assistance needed for most daily activities"]}',
+        "output": """{
+  "llm_milestone_score": 0.34,
+  "llm_impairment_score": 0.28,
+  "llm_combined_score": 0.31,
+  "confidence": "high",
+  "summary": "The child shows limited milestone attainment and moderate-to-severe impairment burden.",
+  "supporting_evidence": [
+    "Only early gross motor milestones are reported",
+    "Fine motor development is limited to early skills",
+    "Several lower-body impairments are present at moderate to high severity",
+    "Several upper-body impairments are present at moderate severity",
+    "The story confirms dependence on a walker and assistance in most daily activities"
+  ]
+}""",
     },
 
-    # Example 5 — Score 2: almost no milestones, severe impairments
+    # Example 5 — Very limited but not absent function
     {
         "input": """Assess motor development for this record:
 
@@ -207,7 +262,20 @@ Motorical impairments (upper):
 Story:
 The child cannot sit without support and has not developed any form of independent mobility. All positioning and transfers require full caregiver assistance. Reaching for objects is inconsistent and poorly controlled. Intensive physiotherapy and occupational therapy are ongoing.""",
 
-        "output": '{"motor_score_1_to_10": 2, "confidence": "high", "summary": "The child has achieved only the most rudimentary gross and fine motor milestones at age 2, with severe lower and upper body impairments across all measured dimensions. Almost entirely dependent on caregivers for all motor activities.", "supporting_evidence": ["Only 1 gross motor milestone achieved (rolling) — no sitting, standing, or walking", "Only 1 fine motor milestone achieved (inconsistent reaching) — no transfer, pincer grasp, or self-feeding", "Lower-body impairments at high severity: spasticity 5/5, muscle weakness 4/5, range of motion 4/5", "Upper-body impairments at high severity: spasticity 4/5, muscle weakness 4/5, coordination 5/5", "Story confirms complete positional dependence and poorly controlled voluntary movement"]}',
+        "output": """{
+  "llm_milestone_score": 0.10,
+  "llm_impairment_score": 0.12,
+  "llm_combined_score": 0.11,
+  "confidence": "high",
+  "summary": "The child has very low milestone attainment and high impairment burden.",
+  "supporting_evidence": [
+    "Only one gross motor milestone is reported",
+    "Only one fine motor milestone is reported",
+    "Lower-body impairments are severe",
+    "Upper-body impairments are severe",
+    "The story confirms full dependence and very limited functional movement"
+  ]
+}""",
     },
 ]
 
@@ -239,6 +307,55 @@ def clean_text(value: object) -> str | None:
 
     return text
 
+def _extract_row_milestone_keys(row: dict) -> set[str]:
+    """
+    Extract milestone id/value/label strings from one motorical_development row.
+ 
+    Reads both gross_motor_development and fine_motor_development, which are
+    stored as JSONB dicts with a 'milestones' list.  Returns a flat set of
+    stable string keys — the same logic used by the rule-based
+    extract_milestone_keys() in motor_development.py.
+ 
+    Args:
+        row (dict): One row from the motorical_development table.
+ 
+    Returns:
+        set[str]: Milestone keys found in this row.
+    """
+    keys: set[str] = set()
+ 
+    for field in ("gross_motor_development", "fine_motor_development"):
+        raw = row.get(field)
+        if raw is None:
+            continue
+ 
+        # The DB value arrives either as a dict (already parsed) or as a string
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except (json.JSONDecodeError, ValueError):
+                continue
+ 
+        if not isinstance(raw, dict):
+            continue
+ 
+        for m in raw.get("milestones", []) or []:
+            if m is None:
+                continue
+            if isinstance(m, dict):
+                mid = m.get("id")
+                val = m.get("value")
+                lab = m.get("label")
+                if mid is None and val is None and lab is None:
+                    continue
+                key = str(mid or val or lab).strip()
+            else:
+                key = str(m).strip()
+ 
+            if key and key.lower() not in ("none", ""):
+                keys.add(key)
+ 
+    return keys
 
 def extract_json_content(text: str) -> str:
     """
@@ -276,9 +393,7 @@ def repair_json_text(text: str) -> str:
     """
     text = text.strip()
 
-    # Fix common mistake:
-    # "supporting_evidence: [
-    # -> "supporting_evidence": [
+    # Fix keys accidentally emitted without quote before colon
     text = re.sub(
         r'"([A-Za-z0-9_]+):\s*(\[|\{|"|-|\d)',
         r'"\1": \2',
@@ -289,19 +404,28 @@ def repair_json_text(text: str) -> str:
 
 
 def normalize_motor_assessment_keys(text: str) -> str:
+    """
+    Normalize common alternative field names into the schema expected by
+    MotorAssessment.
+    """
     data = json.loads(text)
 
     key_map = {
-        "motor_function_level": "motor_score_1_to_10",
-        "motor_function_score": "motor_score_1_to_10",
-        "motor_score_1_and_10": "motor_score_1_to_10",
-        "score": "motor_score_1_to_10",
+        "milestone_score": "llm_milestone_score",
+        "llm_milestones_score": "llm_milestone_score",
+        "motor_milestone_score": "llm_milestone_score",
+
+        "impairment_score": "llm_impairment_score",
+        "llm_impairments_score": "llm_impairment_score",
+        "motor_impairment_score": "llm_impairment_score",
+
+        "combined_score": "llm_combined_score",
+        "llm_motor_score": "llm_combined_score",
+        "motor_score": "llm_combined_score",
+        "overall_score": "llm_combined_score",
+
         "reasoning": "summary",
         "motor_summary": "summary",
-        "gross_motor": "gross_motor_level",
-        "gross_motor_leg_level": "gross_motor_level",
-        "fine_motor": "fine_motor_level",
-        "impairment_level": "impairment_severity",
         "evidence": "supporting_evidence",
     }
 
@@ -316,37 +440,50 @@ def normalize_motor_assessment_keys(text: str) -> str:
 # BUILD INPUT FOR ONE ROW
 # ---------------------------
 
-def build_md_input(row: dict) -> str:
+def build_md_input(row: dict, prior_milestones: set[str] | None = None) -> str:
     """
     Build structured input for the LLM from one motorical_development row.
-
+ 
     Args:
         row (dict): One row from the motorical_development table.
-
+        prior_milestones (set[str] | None): Cumulative milestone keys already
+            achieved in earlier age periods for this child.  When provided,
+            they are included in the prompt so the LLM can score cumulatively,
+            matching the rule-based motorscore_milestones_setvalue logic.
+ 
     Returns:
         str: Formatted input text for the LLM.
     """
+    prior_section = ""
+    if prior_milestones:
+        sorted_keys = sorted(prior_milestones)
+        prior_section = (
+            "\nMilestones already achieved in earlier age periods "
+            "(carry these forward — do NOT ignore them when scoring):\n"
+            + ", ".join(sorted_keys)
+            + "\n"
+        )
+ 
     return f"""
 [Motorical Development Record]
-
+ 
 Age: {row.get("age")}
-
-Gross motor development:
+{prior_section}
+Gross motor development (this age period):
 {clean_text(row.get("gross_motor_development")) or "unknown"}
-
-Fine motor development:
+ 
+Fine motor development (this age period):
 {clean_text(row.get("fine_motor_development")) or "unknown"}
-
+ 
 Motorical impairments (lower):
 {clean_text(row.get("motorical_impairments_lower")) or "unknown"}
-
+ 
 Motorical impairments (upper):
 {clean_text(row.get("motorical_impairments_upper")) or "unknown"}
-
+ 
 Story:
 {clean_text(row.get("story")) or "unknown"}
 """.strip()
-
 
 # ---------------------------
 # LLM ANALYSIS
@@ -370,50 +507,76 @@ def analyze_md_row(text: str, model_name: str = MODEL_NAME) -> MotorAssessment:
     system_prompt = """
 You are evaluating motor development in children with cerebral palsy based on structured survey data.
 
+Your goal is NOT to make a free clinical judgment.
+Your goal is to produce scores that are as comparable as possible to an existing rule-based motor scoring system.
+
+The existing rule-based system mainly uses:
+1. milestone attainment
+2. impairment burden
+3. a combined score with roughly equal weight for milestone attainment and impairments
+
 TASK:
-Estimate the child's motor function level on a scale from 1 to 10.
+Return exactly these fields:
+- llm_milestone_score
+- llm_impairment_score
+- llm_combined_score
+- confidence
+- summary
+- supporting_evidence
+
+SCORING RULES:
+
+1. llm_milestone_score
+- Must be a float between 0.0 and 1.0
+- Higher = more achieved motor milestones relative to expected function for the child's age
+- Base this primarily on the structured gross and fine motor milestone data
+- The story may slightly clarify function, but should not override clear structured milestone data
+
+2. llm_impairment_score
+- Must be a float between 0.0 and 1.0
+- Higher = less impairment / better function
+- Lower = more impairments and/or more severe impairments
+- Base this primarily on the structured upper/lower impairment fields
+- The story may slightly clarify functional impact, but should not override clear impairment data
+
+3. llm_combined_score
+- Must be a float between 0.0 and 1.0
+- Should be close to the average of llm_milestone_score and llm_impairment_score
+- Use approximately:
+  llm_combined_score = (llm_milestone_score + llm_impairment_score) / 2
+- Only make very small adjustments based on the free-text story if absolutely necessary
+- Do NOT use large subjective adjustments
+
+INTERPRETATION GUIDE:
+Milestone score:
+- 0.0-0.2 = very few milestones achieved for age
+- 0.2-0.4 = clearly limited milestone attainment
+- 0.4-0.6 = moderate milestone attainment
+- 0.6-0.8 = good milestone attainment
+- 0.8-1.0 = very high milestone attainment
+
+Impairment score:
+- 0.0-0.2 = very severe and/or numerous impairments
+- 0.2-0.4 = marked impairment burden
+- 0.4-0.6 = moderate impairment burden
+- 0.6-0.8 = mild impairment burden
+- 0.8-1.0 = minimal or no reported impairments
 
 IMPORTANT:
-- Base your assessment ONLY on the provided information.
-- Use both structured responses and free-text descriptions.
-- Do NOT guess beyond what is stated.
-- Be conservative.
-- Return raw JSON only.
-- Do NOT wrap the JSON in markdown code fences.
-- Use EXACTLY these field names and no others:
-  - motor_score_1_to_10
-  - confidence
-  - summary
-  - supporting_evidence
-
-SCALE GUIDELINES:
-1 = very limited motor function, severe impairments
-3 = major limitations, very few abilities
-5 = moderate motor function with clear limitations
-7 = relatively good motor abilities with some impairments
-10 = very strong motor function, minimal limitations
-
-FIELD REQUIREMENTS:
-- motor_score_1_to_10: integer from 1 to 10
-- confidence: one of "low", "medium", "high"
-- summary: short English summary
-- gross_motor_level: short English description
-- fine_motor_level: short English description
-- impairment_severity: short English description
-- supporting_evidence: list of short English strings
-
-LANGUAGE:
-- Input may be multilingual (Swedish, English, Polish).
-- Output MUST be in English.
-
-Return ONLY valid JSON matching the required field names exactly.
+- Base your assessment ONLY on the provided information
+- Be conservative
+- Prioritize structured data over narrative text
+- Keep the scores numerically aligned with a rule-based scoring system, not with a clinical impression scale
+- Return raw JSON only
+- Do NOT wrap the JSON in markdown code fences
+- Output MUST be in English
+- Use EXACTLY the required field names and no others
 """
 
     user_prompt = f"""Assess motor development for this record:
 
 {text}"""
 
-    # Build messages list: system prompt → few-shot pairs → real user prompt
     messages = [{"role": "system", "content": system_prompt}]
 
     for example in FEW_SHOT_EXAMPLES:
@@ -427,7 +590,7 @@ Return ONLY valid JSON matching the required field names exactly.
             model=model_name,
             messages=messages,
             format=MotorAssessment.model_json_schema(),
-            options={"num_predict": 512},
+            options={"num_predict": 512, "temperature": 0.1},
         )
 
     for attempt in range(CHAT_MAX_RETRIES + 1):
@@ -435,16 +598,16 @@ Return ONLY valid JSON matching the required field names exactly.
             with ThreadPoolExecutor(max_workers=1) as executor:
                 future = executor.submit(_call_llm)
                 response = future.result(timeout=CHAT_TIMEOUT_SECONDS)
-            break  # succeeded
+            break
         except FuturesTimeoutError:
             print(
-                f"    Timeout på försök {attempt + 1}/{CHAT_MAX_RETRIES + 1} "
-                f"({CHAT_TIMEOUT_SECONDS}s), försöker igen..."
+                f"    Timeout on attempt {attempt + 1}/{CHAT_MAX_RETRIES + 1} "
+                f"({CHAT_TIMEOUT_SECONDS}s), retrying..."
             )
             if attempt == CHAT_MAX_RETRIES:
                 raise RuntimeError(
-                    f"LLM timeout efter {CHAT_MAX_RETRIES + 1} försök "
-                    f"({CHAT_TIMEOUT_SECONDS}s per försök)"
+                    f"LLM timeout after {CHAT_MAX_RETRIES + 1} attempts "
+                    f"({CHAT_TIMEOUT_SECONDS}s per attempt)"
                 )
 
     cleaned_response = extract_json_content(response.message.content)
@@ -467,58 +630,81 @@ Return ONLY valid JSON matching the required field names exactly.
 # ANALYZE ONE CHILD
 # ---------------------------
 
-def analyze_child(df: pl.DataFrame, introductory_id: str) -> list[dict]:
+def analyze_child(df, introductory_id: str) -> list[dict]:
     """
-    Analyze all motorical development rows for one child.
-
+    Analyze all motorical development rows for one child, scoring cumulatively.
+ 
+    Milestones observed in earlier age periods are extracted from the structured
+    data and forwarded to each subsequent LLM call so that the milestone score
+    is cumulative — matching the rule-based approach in
+    motorscore_milestones_setvalue().
+ 
+    Impairment scoring is intentionally NOT cumulative: impairments are assessed
+    per age period, reflecting the child's current burden at that point in time,
+    which is also how the rule-based system works.
+ 
     Args:
         df (pl.DataFrame): Motorical development table.
         introductory_id (str): Child/survey id.
-
+ 
     Returns:
         list[dict]: One result dict per age row.
     """
+    import polars as pl
+ 
     df_child = (
         df.filter(pl.col("introductory_id") == introductory_id)
         .sort("age")
     )
-
+ 
     if df_child.height == 0:
         return []
-
-    child_results = []
-
+ 
+    child_results: list[dict] = []
+    seen_milestones: set[str] = set()   # cumulative across age periods
+ 
     for row in df_child.iter_rows(named=True):
         age = row.get("age")
-        row_start_time = time.perf_counter()
-
-        text_input = build_md_input(row)
-        print(f"    Skickar input för age {age} ({len(text_input)} tecken)...")
-
+ 
+        import time
+        row_start = time.perf_counter()
+ 
+        # Pass whatever has been seen so far (empty set on first iteration)
+        text_input = build_md_input(row, prior_milestones=seen_milestones or None)
+        print(f"    Sending input for age {age} "
+              f"({len(text_input)} chars, "
+              f"{len(seen_milestones)} prior milestones)...")
+ 
         try:
             result = analyze_md_row(text_input)
         except RuntimeError as e:
-            print(f"    Age {age} HOPPADES ÖVER: {e}")
+            print(f"    Age {age} SKIPPED: {e}")
+            # Still update seen_milestones so subsequent ages are not affected
+            seen_milestones |= _extract_row_milestone_keys(row)
             continue
         except Exception as e:
-            print(f"    Age {age} FEL (oväntat): {e}")
+            print(f"    Age {age} ERROR (unexpected): {e}")
+            seen_milestones |= _extract_row_milestone_keys(row)
             continue
-
-        row_elapsed_time = time.perf_counter() - row_start_time
-        print(f"    Age {age} done in {row_elapsed_time:.2f} seconds.")
-
+ 
+        elapsed = time.perf_counter() - row_start
+        print(f"    Age {age} done in {elapsed:.2f}s.")
+ 
         child_results.append({
             "introductory_id": row.get("introductory_id"),
             "age": age,
-            "llm_motor_score": result.motor_score_1_to_10,
-            "confidence": result.confidence,
-            "summary": result.summary,
-            "supporting_evidence": " | ".join(result.supporting_evidence),
+            "llm_milestone_score":  result.llm_milestone_score,
+            "llm_impairment_score": result.llm_impairment_score,
+            "llm_combined_score":   result.llm_combined_score,
+            "confidence":           result.confidence,
+            "summary":              result.summary,
+            "supporting_evidence":  " | ".join(result.supporting_evidence),
         })
-
+ 
+        # Accumulate milestones AFTER scoring this age period
+        seen_milestones |= _extract_row_milestone_keys(row)
+ 
     return child_results
-
-
 # ---------------------------
 # WRITE TEXT REPORT
 # ---------------------------
@@ -551,7 +737,9 @@ def write_text_report(
         for row in results_df.sort(["introductory_id", "age"]).iter_rows(named=True):
             lines.append(f"Introductory ID: {row['introductory_id']}")
             lines.append(f"Age: {row['age']}")
-            lines.append(f"LLM motor score: {row['llm_motor_score']}")
+            lines.append(f"LLM milestone score: {row['llm_milestone_score']:.3f}")
+            lines.append(f"LLM impairment score: {row['llm_impairment_score']:.3f}")
+            lines.append(f"LLM combined score: {row['llm_combined_score']:.3f}")
             lines.append(f"Confidence: {row['confidence']}")
             lines.append(f"Summary: {row['summary']}")
             lines.append(f"Supporting evidence: {row['supporting_evidence']}")
