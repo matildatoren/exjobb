@@ -1,6 +1,18 @@
 # Important note:
 # This is not an objective clinical measure, but an LLM-derived summary score
-# intentionally designed to be comparable to the project's rule-based motor scores.
+# intentionally designed to be comparable to the project's rule-based motor scores,
+# while also incorporating information from free-text narratives.
+#
+# Architecture (Roll 2):
+#   1. LLM reads structured milestone/impairment data AND the free-text story.
+#      It estimates three input values:
+#        - estimated_cum_milestones  (may exceed what the checkboxes show)
+#        - estimated_n_selected      (impairments with non-zero severity)
+#        - estimated_sum_ratings     (sum of severity ratings)
+#   2. Python applies the EXACT same formula as motorscore_milestones_setvalue /
+#      motorscore_impairments_setvalue to those estimated inputs.
+#   This means scores are comparable to the rule-based system but deviate
+#   meaningfully when the narrative reveals information the checkboxes missed.
 
 from typing import List, Literal
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
@@ -12,24 +24,21 @@ from pydantic import BaseModel, Field
 
 import sys
 from pathlib import Path
-
 import json
 import re
 
-# Resolve imports regardless of where the script is called from
-ROOT = Path(__file__).resolve().parents[1]  # src/
+ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(ROOT))
 
 from connect_db import get_connection
 from dataloader import load_data
 
 
-# ---------------------------
+# ─────────────────────────────────────────────────────────────────────────────
 # SETTINGS
-# ---------------------------
+# ─────────────────────────────────────────────────────────────────────────────
 
 MODEL_NAME = "gemma4:26b"
-
 CHAT_TIMEOUT_SECONDS = 60
 CHAT_MAX_RETRIES = 2
 
@@ -63,285 +72,362 @@ INTRODUCTORY_IDS = [
 
 OUTPUT_DIR = Path(__file__).resolve().parents[2] / "outputs" / "motorscore_analysis"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
 OUTPUT_TXT_PATH = OUTPUT_DIR / "llm_motorscore_results.txt"
 OUTPUT_CSV_PATH = OUTPUT_DIR / "llm_motorscore_results.csv"
 
 
-# ---------------------------
-# STRUCTURED OUTPUT
-# ---------------------------
+# ─────────────────────────────────────────────────────────────────────────────
+# LOOKUP TABLES  (mirrors motor_scores.py exactly)
+# ─────────────────────────────────────────────────────────────────────────────
 
-class MotorAssessment(BaseModel):
-    llm_milestone_score: float = Field(ge=0.0, le=1.0)
-    llm_impairment_score: float = Field(ge=0.0, le=1.0)
-    llm_combined_score: float = Field(ge=0.0, le=1.0)
+POSSIBLE_MILESTONES_BY_AGE_GMFCS: dict[int, dict[int, int]] = {
+    1: {1: 12, 2: 11, 3:  9, 4:  7, 5:  4},
+    2: {1: 19, 2: 17, 3: 13, 4:  9, 5:  5},
+    3: {1: 27, 2: 23, 3: 16, 4: 11, 5:  6},
+    4: {1: 35, 2: 29, 3: 18, 4: 12, 5:  7},
+}
+
+N_NAMED_BY_AGE_GMFCS: dict[int, dict[int, int]] = {
+    1: {1:  9, 2:  9, 3:  8, 4:  7, 5:  5},
+    2: {1: 16, 2: 16, 3: 14, 4: 11, 5:  7},
+    3: {1: 17, 2: 17, 3: 15, 4: 11, 5:  8},
+    4: {1: 18, 2: 18, 3: 16, 4: 11, 5:  8},
+}
+
+_GMFCS_STR_TO_INT: dict[str, int] = {
+    "Level I – Walks without limitations": 1,
+    "Level II – Walks with some limitations": 2,
+    "Level III – Walks with assistive devices": 3,
+    "Level IV – Limited mobility, primarily uses a wheelchair": 4,
+    "Level V – Severe limitations, needs full assistance for mobility": 5,
+    "Not sure / Don't know": 3,
+}
+
+
+def _gmfcs_int_from_str(gmfcs_str: str | None) -> int:
+    return _GMFCS_STR_TO_INT.get(gmfcs_str or "", 3)
+
+def _possible_milestones(age: int, gmfcs_int: int) -> int:
+    return POSSIBLE_MILESTONES_BY_AGE_GMFCS[max(1, min(4, age))].get(gmfcs_int, 16)
+
+def _n_named(age: int, gmfcs_int: int) -> int:
+    return N_NAMED_BY_AGE_GMFCS[max(1, min(4, age))].get(gmfcs_int, 14)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EXACT FORMULA  (same math as motor_scores.py — applied in Python, not LLM)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def apply_formula(
+    cum_milestones: int,
+    n_selected: int,
+    sum_ratings: float,
+    possible: int,
+    n_named: int,
+) -> dict[str, float]:
+    """
+    Apply the exact rule-based formula to estimated input values.
+
+    Returns milestone_score, impairment_score (mms_normalized), and combined_score.
+    """
+    # Milestone score
+    milestone_score = min(cum_milestones / possible, 1.0) if possible > 0 else 0.0
+
+    # Impairment score
+    presence_ratio = min(n_selected / n_named, 1.0) if n_named > 0 else 0.0
+
+    if n_selected > 0:
+        mean_severity  = sum_ratings / n_selected
+        severity_ratio = max(0.0, min(1.0, (mean_severity - 1) / 4))
+    else:
+        severity_ratio = 0.0
+
+    impairment_burden = (presence_ratio + severity_ratio) / 2
+    mms_normalized    = max(0.0, min(1.0, 1.0 - impairment_burden))
+
+    combined_score = (milestone_score + mms_normalized) / 2
+
+    return {
+        "milestone_score":    milestone_score,
+        "impairment_score":   mms_normalized,
+        "combined_score":     combined_score,
+        # intermediates — useful for debugging / audit
+        "presence_ratio":     presence_ratio,
+        "severity_ratio":     severity_ratio,
+        "impairment_burden":  impairment_burden,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STRUCTURED OUTPUT  — LLM returns estimated INPUT VALUES, not scores
+# ─────────────────────────────────────────────────────────────────────────────
+
+class MotorInputEstimate(BaseModel):
+    estimated_cum_milestones: int = Field(
+        ge=0,
+        description=(
+            "Best estimate of cumulative unique milestones achieved up to and "
+            "including this age period, combining checkbox data with any "
+            "additional milestones inferred from the free-text story."
+        ),
+    )
+    estimated_n_selected: int = Field(
+        ge=0,
+        description=(
+            "Best estimate of the number of distinct impairment domains with a "
+            "non-zero severity rating, combining structured fields with story."
+        ),
+    )
+    estimated_sum_ratings: float = Field(
+        ge=0.0,
+        description=(
+            "Best estimate of the total sum of all non-zero impairment severity "
+            "ratings (each on a 1–5 scale), combining structured fields with story."
+        ),
+    )
     confidence: Literal["low", "medium", "high"]
-    summary: str
-    supporting_evidence: List[str]
+    story_adjustments: List[str] = Field(
+        description=(
+            "List of specific adjustments made because of the free-text story "
+            "(e.g. 'Story mentions child walks without walker — added 2 gross "
+            "motor milestones not in checkboxes'). Empty list if story added "
+            "nothing beyond what the structured data already captured."
+        ),
+    )
+    summary: str = Field(
+        description=(
+            "One or two sentences explaining the final estimates and the key "
+            "reasoning behind any story-driven adjustments."
+        ),
+    )
 
 
-# ---------------------------
+# ─────────────────────────────────────────────────────────────────────────────
 # FEW-SHOT EXAMPLES
-# ---------------------------
+# Each example shows: structured baseline → story adjustment → final estimates
+# ─────────────────────────────────────────────────────────────────────────────
 
 FEW_SHOT_EXAMPLES = [
-    # Example 1 — Very high function
+    # Example 1 — Story confirms structured data, no adjustment needed
     {
-        "input": """Assess motor development for this record:
+        "input": """Estimate motor input values for this record:
 
 [Motorical Development Record]
 
 Age: 4
+GMFCS level: 1 (Walks without limitations)
+Milestone ceiling (possible_milestones): 35
+Impairment ceiling (n_named): 18
+Prior cumulative milestones (from earlier age periods): 0
 
-Gross motor development:
-{"milestones": [{"id": "rolls_both_directions"}, {"id": "pushes_up_straight_elbows"}, {"id": "sits_independently"}, {"id": "crawls_or_scoots"}, {"id": "stands_with_support"}, {"id": "pulls_to_stand_cruises"}, {"id": "first_independent_steps"}, {"id": "climbs_stairs_hands_knees"}, {"id": "squats_and_stands"}, {"id": "runs_and_climbs_furniture"}, {"id": "jumps_both_feet"}, {"id": "walks_stairs_one_foot_per_step"}, {"id": "balances_one_foot_briefly"}, {"id": "pedals_tricycle_hops"}, {"id": "throws_overhand_skips_hops"}, {"id": "balances_one_foot_5_seconds"}, {"id": "rides_bike_training_wheels"}, {"id": "hops_forward_rides_two_wheel_bike"}, {"id": "hops_jumps_confidently_10_seconds"}, {"id": "jumps_rope_sports"}, {"id": "runs_smoothly_throws_catches"}]}
+Gross motor development (this period):
+{"milestones": [{"id": "rolls_both_directions"}, {"id": "sits_independently"}, {"id": "stands_with_support"}, {"id": "first_independent_steps"}, {"id": "runs_and_climbs_furniture"}, {"id": "jumps_both_feet"}, {"id": "balances_one_foot_briefly"}, {"id": "pedals_tricycle_hops"}, {"id": "rides_bike_training_wheels"}, {"id": "jumps_rope_sports"}, {"id": "runs_smoothly_throws_catches"}]}
 
-Fine motor development:
-{"milestones": [{"id": "reaches_grasps_both_hands"}, {"id": "transfers_hand_to_hand"}, {"id": "bangs_objects_points"}, {"id": "pincer_grasp"}, {"id": "places_in_containers_self_feeds_fingers"}, {"id": "turns_pages_several"}, {"id": "stacks_blocks_uses_spoon"}, {"id": "scribbles_stacks_6_8_blocks"}, {"id": "copies_lines_circles_spoon_fork"}, {"id": "turns_single_pages_copies_crosses"}, {"id": "scissors_large_buttons"}, {"id": "draws_simple_person"}, {"id": "copies_squares_attempts_letters"}, {"id": "fork_spoon_pencil_grasp"}]}
+Fine motor development (this period):
+{"milestones": [{"id": "reaches_grasps_both_hands"}, {"id": "pincer_grasp"}, {"id": "turns_pages_several"}, {"id": "stacks_blocks_uses_spoon"}, {"id": "copies_lines_circles_spoon_fork"}, {"id": "scissors_large_buttons"}, {"id": "draws_simple_person"}, {"id": "copies_squares_attempts_letters"}]}
 
-Motorical impairments (lower):
-{"details": {}}
-
-Motorical impairments (upper):
-{"details": {}}
+Motorical impairments (lower): {"details": {}}
+Motorical impairments (upper): {"details": {}}
 
 Story:
-The child's motor development has consistently been at or above the expected level for their age. No motor concerns have been raised by parents, physiotherapists, or preschool staff. The child participates fully in all physical activities with peers, including running games, climbing, and ball sports.""",
+The child participates fully in all physical activities. No motor concerns raised by anyone. Runs, jumps and uses scissors well for their age.""",
 
         "output": """{
-  "llm_milestone_score": 0.98,
-  "llm_impairment_score": 1.0,
-  "llm_combined_score": 0.99,
+  "estimated_cum_milestones": 19,
+  "estimated_n_selected": 0,
+  "estimated_sum_ratings": 0.0,
   "confidence": "high",
-  "summary": "The child demonstrates near-maximal milestone attainment and no reported impairments.",
-  "supporting_evidence": [
-    "All or nearly all gross motor milestones are achieved",
-    "All or nearly all fine motor milestones are achieved",
-    "No lower-body impairments are reported",
-    "No upper-body impairments are reported",
-    "The story confirms full participation in age-expected physical activities"
-  ]
+  "story_adjustments": [],
+  "summary": "Checkboxes show 11 gross + 8 fine = 19 milestones; story confirms full participation but adds no specific new milestones beyond what is already captured. No impairments in structured data and story is consistent."
 }""",
     },
 
-    # Example 2 — Very low function
+    # Example 2 — Story reveals additional milestones not in checkboxes
     {
-        "input": """Assess motor development for this record:
+        "input": """Estimate motor input values for this record:
+
+[Motorical Development Record]
+
+Age: 3
+GMFCS level: 2 (Walks with some limitations)
+Milestone ceiling (possible_milestones): 23
+Impairment ceiling (n_named): 17
+Prior cumulative milestones (from earlier age periods): 8
+
+Gross motor development (this period):
+{"milestones": [{"id": "first_independent_steps"}, {"id": "squats_and_stands"}]}
+
+Fine motor development (this period):
+{"milestones": [{"id": "stacks_blocks_uses_spoon"}, {"id": "scribbles_stacks_6_8_blocks"}]}
+
+Motorical impairments (lower): {"details": {"spasticity": 2}}
+Motorical impairments (upper): {"details": {}}
+
+Story:
+Barnet går nu utan hjälpmedel och kan springa kortare sträckor, även om det haltar lite. Klättrar uppför trappor med stöd av räcke. Kan klippa med sax och rita enkla figurer. Leker med jämnåriga utan problem.""",
+
+        "output": """{
+  "estimated_cum_milestones": 17,
+  "estimated_n_selected": 1,
+  "estimated_sum_ratings": 2.0,
+  "confidence": "high",
+  "story_adjustments": [
+    "Story mentions child runs short distances — added 'runs_and_climbs_furniture' milestone not checked in structured data (+1)",
+    "Story mentions climbing stairs with railing — added 'climbs_stairs_hands_knees' milestone not checked (+1)",
+    "Story confirms scissor use and drawing — consistent with fine motor checkboxes, no extra added"
+  ],
+  "summary": "Structured data gives 8 prior + 4 new = 12 cumulative milestones, but the story clearly describes running and stair-climbing that are not checked — raising the estimate to 14 new milestones and 17 cumulative. One impairment (spasticity rating 2) from lower body."
+}""",
+    },
+
+    # Example 3 — Story reveals impairments are less severe than rated
+    {
+        "input": """Estimate motor input values for this record:
 
 [Motorical Development Record]
 
 Age: 4
+GMFCS level: 3 (Walks with assistive devices)
+Milestone ceiling (possible_milestones): 18
+Impairment ceiling (n_named): 16
+Prior cumulative milestones (from earlier age periods): 7
 
-Gross motor development:
-{"milestones": []}
+Gross motor development (this period):
+{"milestones": [{"id": "first_independent_steps"}, {"id": "climbs_stairs_hands_knees"}]}
 
-Fine motor development:
-{"milestones": []}
+Fine motor development (this period):
+{"milestones": [{"id": "copies_lines_circles_spoon_fork"}, {"id": "scissors_large_buttons"}]}
 
-Motorical impairments (lower):
-{"details": {"spasticity": 5, "muscle_weakness": 5, "range_of_motion": 5}}
-
-Motorical impairments (upper):
-{"details": {"spasticity": 5, "muscle_weakness": 5, "coordination": 5}}
+Motorical impairments (lower): {"details": {"spasticity": 5, "muscle_weakness": 5, "toe_walking": 4}}
+Motorical impairments (upper): {"details": {"coordination": 3}}
 
 Story:
-Barnet har spastisk tetrapares och är helt beroende av omvårdnad för alla förflyttningar och aktiviteter. Inga funktionella motoriska färdigheter har utvecklats. Barnet kan inte sitta utan stöd och har aldrig stått eller gått. Finmotoriken är extremt begränsad – inget grepp, ingen pekförmåga och inget självständigt hanterande av föremål. Intensiv habilitering pågår utan tydlig funktionell framgång hittills.""",
+Barnet gör stora framsteg. Fysioterapeuten noterade förra månaden att spasticiteten minskat påtagligt efter botoxbehandling och att barnet nu tar fler steg utan rollator än förut. Styrkan har också förbättrats märkbart. Koordinationen i händerna är fortfarande lite svag.""",
 
         "output": """{
-  "llm_milestone_score": 0.03,
-  "llm_impairment_score": 0.05,
-  "llm_combined_score": 0.04,
-  "confidence": "high",
-  "summary": "The child shows extremely limited milestone attainment and very severe impairment burden.",
-  "supporting_evidence": [
-    "No gross motor milestones are reported",
-    "No fine motor milestones are reported",
-    "Lower-body impairments are severe across all reported domains",
-    "Upper-body impairments are severe across all reported domains",
-    "The story confirms complete dependence and absence of functional motor development"
-  ]
+  "estimated_cum_milestones": 11,
+  "estimated_n_selected": 4,
+  "estimated_sum_ratings": 11.0,
+  "confidence": "medium",
+  "story_adjustments": [
+    "Story reports spasticity has decreased markedly after botox — adjusted spasticity rating from 5 to 3",
+    "Story reports strength has improved noticeably — adjusted muscle_weakness rating from 5 to 3",
+    "Toe-walking and upper coordination ratings unchanged as story does not specifically address them",
+    "Story mentions more independent steps than before — no new milestone added since 'first_independent_steps' already captured"
+  ],
+  "summary": "7 prior + 4 new checkboxes = 11 cumulative milestones. The story credibly describes recent clinical improvement that makes the checkbox ratings for spasticity and weakness too high — adjusted both down from 5 to 3, changing sum_ratings from 17 to 13."
 }""",
     },
 
-    # Example 3 — Moderate to good function
+    # Example 4 — Sparse checkboxes, story fills major gap
     {
-        "input": """Assess motor development for this record:
-
-[Motorical Development Record]
-
-Age: 3
-
-Gross motor development:
-{"milestones": [{"id": "rolls_both_directions"}, {"id": "pushes_up_straight_elbows"}, {"id": "sits_independently"}, {"id": "crawls_or_scoots"}, {"id": "stands_with_support"}, {"id": "pulls_to_stand_cruises"}, {"id": "first_independent_steps"}, {"id": "climbs_stairs_hands_knees"}, {"id": "squats_and_stands"}, {"id": "runs_and_climbs_furniture"}, {"id": "jumps_both_feet"}, {"id": "walks_stairs_one_foot_per_step"}]}
-
-Fine motor development:
-{"milestones": [{"id": "reaches_grasps_both_hands"}, {"id": "transfers_hand_to_hand"}, {"id": "bangs_objects_points"}, {"id": "pincer_grasp"}, {"id": "places_in_containers_self_feeds_fingers"}, {"id": "turns_pages_several"}, {"id": "stacks_blocks_uses_spoon"}, {"id": "scribbles_stacks_6_8_blocks"}, {"id": "copies_lines_circles_spoon_fork"}]}
-
-Motorical impairments (lower):
-{"details": {"spasticity": 2, "muscle_weakness": 1}}
-
-Motorical impairments (upper):
-{"details": {"coordination": 2}}
-
-Story:
-Dziecko chodzi i biega samodzielnie, choć widoczna jest lekka sztywność w lewej nodze podczas szybkiego chodu. Wchodzi po schodach trzymając się poręczy. Zabawa z rówieśnikami przebiega dobrze, dziecko uczestniczy w większości aktywności fizycznych. Terapia fizyczna raz w tygodniu.""",
-
-        "output": """{
-  "llm_milestone_score": 0.72,
-  "llm_impairment_score": 0.78,
-  "llm_combined_score": 0.75,
-  "confidence": "high",
-  "summary": "The child has good milestone attainment with only mild impairment burden.",
-  "supporting_evidence": [
-    "Many gross motor milestones are achieved, including independent walking, running, jumping, and stair-related skills",
-    "Fine motor milestones are broadly age-appropriate",
-    "Only mild lower-body spasticity and minimal weakness are reported",
-    "Only mild upper-body coordination difficulty is reported",
-    "The story confirms independent mobility with only mild limitations"
-  ]
-}""",
-    },
-
-    # Example 4 — Moderately limited function
-    {
-        "input": """Assess motor development for this record:
-
-[Motorical Development Record]
-
-Age: 3
-
-Gross motor development:
-{"milestones": [{"id": "rolls_both_directions"}, {"id": "sits_independently"}, {"id": "stands_with_support"}, {"id": "pulls_to_stand_cruises"}, {"id": "first_independent_steps"}]}
-
-Fine motor development:
-{"milestones": [{"id": "reaches_grasps_both_hands"}, {"id": "transfers_hand_to_hand"}, {"id": "pincer_grasp"}, {"id": "places_in_containers_self_feeds_fingers"}]}
-
-Motorical impairments (lower):
-{"details": {"spasticity": 4, "muscle_weakness": 3, "range_of_motion": 3}}
-
-Motorical impairments (upper):
-{"details": {"spasticity": 3, "muscle_weakness": 3, "coordination": 4}}
-
-Story:
-Barnet tar några steg inomhus men behöver rollator för längre sträckor och utomhus. Klarar inte att springa, hoppa eller gå i trappor utan hjälp. Finmotoriken är påtagligt begränsad – kan ta föremål men har svårt med precision och bilaterala uppgifter. Behöver assistans vid de flesta ADL-moment. Går på habilitering två gånger i veckan.""",
-
-        "output": """{
-  "llm_milestone_score": 0.34,
-  "llm_impairment_score": 0.28,
-  "llm_combined_score": 0.31,
-  "confidence": "high",
-  "summary": "The child shows limited milestone attainment and moderate-to-severe impairment burden.",
-  "supporting_evidence": [
-    "Only early gross motor milestones are reported",
-    "Fine motor development is limited to early skills",
-    "Several lower-body impairments are present at moderate to high severity",
-    "Several upper-body impairments are present at moderate severity",
-    "The story confirms dependence on a walker and assistance in most daily activities"
-  ]
-}""",
-    },
-
-    # Example 5 — Very limited but not absent function
-    {
-        "input": """Assess motor development for this record:
+        "input": """Estimate motor input values for this record:
 
 [Motorical Development Record]
 
 Age: 2
+GMFCS level: 1 (Walks without limitations)
+Milestone ceiling (possible_milestones): 19
+Impairment ceiling (n_named): 16
+Prior cumulative milestones (from earlier age periods): 0
 
-Gross motor development:
-{"milestones": [{"id": "rolls_both_directions"}]}
+Gross motor development (this period):
+{"milestones": [{"id": "sits_independently"}]}
 
-Fine motor development:
-{"milestones": [{"id": "reaches_grasps_both_hands"}]}
+Fine motor development (this period):
+{"milestones": []}
 
-Motorical impairments (lower):
-{"details": {"spasticity": 5, "muscle_weakness": 4, "range_of_motion": 4}}
-
-Motorical impairments (upper):
-{"details": {"spasticity": 4, "muscle_weakness": 4, "coordination": 5}}
+Motorical impairments (lower): {"details": {}}
+Motorical impairments (upper): {"details": {}}
 
 Story:
-The child cannot sit without support and has not developed any form of independent mobility. All positioning and transfers require full caregiver assistance. Reaching for objects is inconsistent and poorly controlled. Intensive physiotherapy and occupational therapy are ongoing.""",
+Föräldern glömde fylla i checkboxarna för den här perioden. Men i textrutan berättar de att barnet kröp, reste sig, tog sina första steg och nu springer runt hemma. Plockar upp föremål med pincettgrepp och matar sig själv med sked. Inga kliniska bekymmer.""",
 
         "output": """{
-  "llm_milestone_score": 0.10,
-  "llm_impairment_score": 0.12,
-  "llm_combined_score": 0.11,
-  "confidence": "high",
-  "summary": "The child has very low milestone attainment and high impairment burden.",
-  "supporting_evidence": [
-    "Only one gross motor milestone is reported",
-    "Only one fine motor milestone is reported",
-    "Lower-body impairments are severe",
-    "Upper-body impairments are severe",
-    "The story confirms full dependence and very limited functional movement"
-  ]
+  "estimated_cum_milestones": 9,
+  "estimated_n_selected": 0,
+  "estimated_sum_ratings": 0.0,
+  "confidence": "medium",
+  "story_adjustments": [
+    "Story mentions crawling — added 'crawls_or_scoots' (+1)",
+    "Story mentions pulling to stand — added 'pulls_to_stand_cruises' (+1)",
+    "Story mentions first independent steps — added 'first_independent_steps' (+1)",
+    "Story mentions running — added 'runs_and_climbs_furniture' (+1)",
+    "Story mentions pincer grip — added 'pincer_grasp' (+1)",
+    "Story mentions self-feeding with spoon — added 'places_in_containers_self_feeds_fingers' and 'stacks_blocks_uses_spoon' (+2)",
+    "Checkboxes only had 'sits_independently' — story makes it clear this was under-reported"
+  ],
+  "summary": "Only 1 checkbox ticked, but the story clearly describes 8 distinct achieved milestones. Confidence is medium rather than high because the story is retrospective parental recall, not direct observation."
+}""",
+    },
+
+    # Example 5 — Story indicates worse function than checkboxes suggest
+    {
+        "input": """Estimate motor input values for this record:
+
+[Motorical Development Record]
+
+Age: 3
+GMFCS level: 4 (Limited mobility, primarily uses a wheelchair)
+Milestone ceiling (possible_milestones): 11
+Impairment ceiling (n_named): 11
+Prior cumulative milestones (from earlier age periods): 3
+
+Gross motor development (this period):
+{"milestones": [{"id": "sits_independently"}, {"id": "stands_with_support"}, {"id": "first_independent_steps"}]}
+
+Fine motor development (this period):
+{"milestones": [{"id": "pincer_grasp"}, {"id": "stacks_blocks_uses_spoon"}]}
+
+Motorical impairments (lower): {"details": {"spasticity": 3}}
+Motorical impairments (upper): {"details": {"coordination": 2}}
+
+Story:
+Vi är lite osäkra på hur vi skulle svara på frågorna. Barnet kan sitta med stöd men inte självständigt, och de "första stegen" är egentligen bara några steg med full handstöd från terapeuten på kliniken — ingenting hemma. Vi satte i kryss för att det ändå hänt. Spasticiteten är ett stort problem och vi hade svårt att ge ett rättvist betyg.""",
+
+        "output": """{
+  "estimated_cum_milestones": 5,
+  "estimated_n_selected": 2,
+  "estimated_sum_ratings": 11.0,
+  "confidence": "medium",
+  "story_adjustments": [
+    "Story clarifies 'sits_independently' was actually with support — removed this milestone (-1)",
+    "Story clarifies 'first_independent_steps' were only therapist-assisted clinic steps — removed this milestone (-1)",
+    "Story says spasticity is a major problem and parents found it hard to rate fairly — adjusted spasticity from 3 to 5",
+    "Upper coordination rating left unchanged as story does not specifically address it"
+  ],
+  "summary": "Checkboxes gave 3 prior + 5 new = 8 cumulative milestones, but the story reveals that 2 of the new ones were over-reported. Adjusted to 5 cumulative. Spasticity severity raised from 3 to 5 based on parent narrative, changing sum_ratings from 5 to 7."
 }""",
     },
 ]
 
 
-# ---------------------------
-# CLEAN TEXT
-# ---------------------------
+# ─────────────────────────────────────────────────────────────────────────────
+# HELPERS
+# ─────────────────────────────────────────────────────────────────────────────
 
 def clean_text(value: object) -> str | None:
-    """
-    Clean a database value and return a usable string.
-
-    Args:
-        value (object): Raw database value.
-
-    Returns:
-        str | None: Cleaned text, or None if the value is empty.
-    """
     if value is None:
         return None
-
     text = str(value).strip()
-
-    if not text:
+    if not text or text.lower() in {"none", "null", "nan"}:
         return None
-
-    if text.lower() in {"none", "null", "nan"}:
-        return None
-
     return text
 
+
 def _extract_row_milestone_keys(row: dict) -> set[str]:
-    """
-    Extract milestone id/value/label strings from one motorical_development row.
- 
-    Reads both gross_motor_development and fine_motor_development, which are
-    stored as JSONB dicts with a 'milestones' list.  Returns a flat set of
-    stable string keys — the same logic used by the rule-based
-    extract_milestone_keys() in motor_development.py.
- 
-    Args:
-        row (dict): One row from the motorical_development table.
- 
-    Returns:
-        set[str]: Milestone keys found in this row.
-    """
     keys: set[str] = set()
- 
     for field in ("gross_motor_development", "fine_motor_development"):
         raw = row.get(field)
         if raw is None:
             continue
- 
-        # The DB value arrives either as a dict (already parsed) or as a string
         if isinstance(raw, str):
             try:
                 raw = json.loads(raw)
             except (json.JSONDecodeError, ValueError):
                 continue
- 
         if not isinstance(raw, dict):
             continue
- 
         for m in raw.get("milestones", []) or []:
             if m is None:
                 continue
@@ -354,459 +440,427 @@ def _extract_row_milestone_keys(row: dict) -> set[str]:
                 key = str(mid or val or lab).strip()
             else:
                 key = str(m).strip()
- 
             if key and key.lower() not in ("none", ""):
                 keys.add(key)
- 
     return keys
 
+
+def _structured_impairment_values(row: dict) -> tuple[int, float]:
+    """Return (n_selected, sum_ratings) from structured impairment fields."""
+    n_selected = 0
+    sum_ratings = 0.0
+    for field in ("motorical_impairments_lower", "motorical_impairments_upper"):
+        raw = row.get(field)
+        if not raw or not isinstance(raw, dict):
+            continue
+        for v in raw.get("details", {}).values():
+            try:
+                fv = float(v)
+                if fv > 0:
+                    n_selected += 1
+                    sum_ratings += fv
+            except (TypeError, ValueError):
+                pass
+    return n_selected, sum_ratings
+
+
 def extract_json_content(text: str) -> str:
-    """
-    Remove markdown code fences if the model wraps the JSON output
-    in ```json ... ```.
-
-    Args:
-        text (str): Raw model output.
-
-    Returns:
-        str: Clean JSON string.
-    """
     text = text.strip()
-
     if text.startswith("```json"):
         text = text.removeprefix("```json").strip()
     elif text.startswith("```"):
         text = text.removeprefix("```").strip()
-
     if text.endswith("```"):
         text = text.removesuffix("```").strip()
-
     return text
 
 
 def repair_json_text(text: str) -> str:
+    return re.sub(r'"([A-Za-z0-9_]+):\s*(\[|\{|"|-|\d)', r'"\1": \2', text.strip())
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# BUILD PROMPT
+# ─────────────────────────────────────────────────────────────────────────────
+
+def build_md_input(
+    row: dict,
+    gmfcs_int: int,
+    prior_milestones: set[str] | None = None,
+) -> str:
     """
-    Repair a few common JSON formatting mistakes from LLM output.
+    Build the LLM prompt for one motorical_development row.
 
-    Args:
-        text (str): Raw or cleaned JSON-like string.
-
-    Returns:
-        str: Repaired JSON string.
+    Shows the structured baseline values so the LLM knows exactly what the
+    checkboxes captured, and can focus its effort on what the story adds.
     """
-    text = text.strip()
+    age = int(row.get("age") or 1)
+    possible = _possible_milestones(age, gmfcs_int)
+    n_named  = _n_named(age, gmfcs_int)
 
-    # Fix keys accidentally emitted without quote before colon
-    text = re.sub(
-        r'"([A-Za-z0-9_]+):\s*(\[|\{|"|-|\d)',
-        r'"\1": \2',
-        text,
-    )
-
-    return text
-
-
-def normalize_motor_assessment_keys(text: str) -> str:
-    """
-    Normalize common alternative field names into the schema expected by
-    MotorAssessment.
-    """
-    data = json.loads(text)
-
-    key_map = {
-        "milestone_score": "llm_milestone_score",
-        "llm_milestones_score": "llm_milestone_score",
-        "motor_milestone_score": "llm_milestone_score",
-
-        "impairment_score": "llm_impairment_score",
-        "llm_impairments_score": "llm_impairment_score",
-        "motor_impairment_score": "llm_impairment_score",
-
-        "combined_score": "llm_combined_score",
-        "llm_motor_score": "llm_combined_score",
-        "motor_score": "llm_combined_score",
-        "overall_score": "llm_combined_score",
-
-        "reasoning": "summary",
-        "motor_summary": "summary",
-        "evidence": "supporting_evidence",
+    gmfcs_labels = {
+        1: "1 (Walks without limitations)",
+        2: "2 (Walks with some limitations)",
+        3: "3 (Walks with assistive devices)",
+        4: "4 (Limited mobility, primarily uses a wheelchair)",
+        5: "5 (Severe limitations, needs full assistance for mobility)",
     }
 
-    normalized = {}
-    for key, value in data.items():
-        normalized[key_map.get(key, key)] = value
+    n_prior = len(prior_milestones) if prior_milestones else 0
+    n_struct_milestones = len(_extract_row_milestone_keys(row))
+    struct_n_selected, struct_sum_ratings = _structured_impairment_values(row)
 
-    return json.dumps(normalized, ensure_ascii=False)
-
-
-# ---------------------------
-# BUILD INPUT FOR ONE ROW
-# ---------------------------
-
-def build_md_input(row: dict, prior_milestones: set[str] | None = None) -> str:
-    """
-    Build structured input for the LLM from one motorical_development row.
- 
-    Args:
-        row (dict): One row from the motorical_development table.
-        prior_milestones (set[str] | None): Cumulative milestone keys already
-            achieved in earlier age periods for this child.  When provided,
-            they are included in the prompt so the LLM can score cumulatively,
-            matching the rule-based motorscore_milestones_setvalue logic.
- 
-    Returns:
-        str: Formatted input text for the LLM.
-    """
     prior_section = ""
     if prior_milestones:
         sorted_keys = sorted(prior_milestones)
         prior_section = (
-            "\nMilestones already achieved in earlier age periods "
-            "(carry these forward — do NOT ignore them when scoring):\n"
+            f"\nMilestones already achieved in earlier age periods "
+            f"({n_prior} total — these are already cumulated):\n"
             + ", ".join(sorted_keys)
             + "\n"
         )
- 
-    return f"""
+
+    return f"""Estimate motor input values for this record:
+
 [Motorical Development Record]
- 
-Age: {row.get("age")}
+
+Age: {age}
+GMFCS level: {gmfcs_labels.get(gmfcs_int, str(gmfcs_int))}
+Milestone ceiling (possible_milestones): {possible}
+Impairment ceiling (n_named): {n_named}
+Prior cumulative milestones (from earlier age periods): {n_prior}
 {prior_section}
-Gross motor development (this age period):
+[Structured baseline — what the checkboxes captured]
+  Milestones in checkboxes this period : {n_struct_milestones}
+  Cumulative if only using checkboxes  : {n_prior + n_struct_milestones}
+  Impairments with non-zero rating     : {struct_n_selected}
+  Sum of impairment ratings            : {struct_sum_ratings:.1f}
+
+Gross motor development (this period):
 {clean_text(row.get("gross_motor_development")) or "unknown"}
- 
-Fine motor development (this age period):
+
+Fine motor development (this period):
 {clean_text(row.get("fine_motor_development")) or "unknown"}
- 
+
 Motorical impairments (lower):
 {clean_text(row.get("motorical_impairments_lower")) or "unknown"}
- 
+
 Motorical impairments (upper):
 {clean_text(row.get("motorical_impairments_upper")) or "unknown"}
- 
+
 Story:
-{clean_text(row.get("story")) or "unknown"}
+{clean_text(row.get("story")) or "(no story provided)"}
 """.strip()
 
-# ---------------------------
-# LLM ANALYSIS
-# ---------------------------
 
-def analyze_md_row(text: str, model_name: str = MODEL_NAME) -> MotorAssessment:
-    """
-    Analyze one motorical development record with the LLM.
-    Retries up to CHAT_MAX_RETRIES times on timeout.
+# ─────────────────────────────────────────────────────────────────────────────
+# LLM CALL
+# ─────────────────────────────────────────────────────────────────────────────
 
-    Args:
-        text (str): Formatted input text for one record.
-        model_name (str): Ollama model name.
+SYSTEM_PROMPT = """
+You are a specialist in pediatric motor development for children with cerebral palsy.
 
-    Returns:
-        MotorAssessment: Structured LLM assessment.
+Your job is NOT to compute scores. Your job is to estimate three input values
+as accurately as possible, combining the structured checkbox data with anything
+the free-text story reveals. Python will apply the scoring formula afterwards.
 
-    Raises:
-        RuntimeError: If all retry attempts time out.
-    """
-    system_prompt = """
-You are evaluating motor development in children with cerebral palsy based on structured survey data.
+══════════════════════════════════════════════════════════════
+THE THREE VALUES YOU MUST ESTIMATE
+══════════════════════════════════════════════════════════════
 
-Your goal is NOT to make a free clinical judgment.
-Your goal is to produce scores that are as comparable as possible to an existing rule-based motor scoring system.
+1. estimated_cum_milestones
+   The total number of UNIQUE motor milestones this child has achieved
+   cumulatively up to and including this age period.
+   - Start from the checkbox data: prior milestones + new checkboxes this period.
+   - Then adjust UPWARD if the story describes specific motor abilities that
+     are not represented in the checkboxes (e.g. "runs short distances", 
+     "climbs stairs", "uses scissors").
+   - Adjust DOWNWARD if the story makes clear that a checked milestone was
+     over-reported (e.g. "those first steps were only in the clinic with a
+     therapist holding both hands").
+   - Do NOT add vague story phrases ("doing well", "making progress") —
+     only add milestones you can name specifically.
+   - Never exceed the milestone ceiling given in the prompt.
 
-The existing rule-based system mainly uses:
-1. milestone attainment
-2. impairment burden
-3. a combined score with roughly equal weight for milestone attainment and impairments
+2. estimated_n_selected
+   The number of distinct impairment domains with a non-zero severity.
+   - Start from the structured impairment fields (count non-zero entries).
+   - Add an impairment domain if the story describes a specific functional
+     limitation that is NOT already in the checkboxes.
+   - Do NOT add impairments for vague phrases.
 
-TASK:
-Return exactly these fields:
-- llm_milestone_score
-- llm_impairment_score
-- llm_combined_score
-- confidence
-- summary
-- supporting_evidence
+3. estimated_sum_ratings
+   The sum of all non-zero severity ratings (each 1–5).
+   - Start from the structured sum.
+   - Adjust individual ratings up or down if the story provides credible
+     clinical evidence that the checkbox rating was inaccurate
+     (e.g. "spasticity reduced markedly after botox last month",
+      "weakness is a major daily barrier").
+   - Keep adjustments conservative — only change a rating if the story
+     gives a specific, concrete reason.
 
-SCORING RULES:
-
-1. llm_milestone_score
-- Must be a float between 0.0 and 1.0
-- Higher = more achieved motor milestones relative to expected function for the child's age
-- Base this primarily on the structured gross and fine motor milestone data
-- The story may slightly clarify function, but should not override clear structured milestone data
-
-2. llm_impairment_score
-- Must be a float between 0.0 and 1.0
-- Higher = less impairment / better function
-- Lower = more impairments and/or more severe impairments
-- Base this primarily on the structured upper/lower impairment fields
-- The story may slightly clarify functional impact, but should not override clear impairment data
-
-3. llm_combined_score
-- Must be a float between 0.0 and 1.0
-- Should be close to the average of llm_milestone_score and llm_impairment_score
-- Use approximately:
-  llm_combined_score = (llm_milestone_score + llm_impairment_score) / 2
-- Only make very small adjustments based on the free-text story if absolutely necessary
-- Do NOT use large subjective adjustments
-
-INTERPRETATION GUIDE:
-Milestone score:
-- 0.0-0.2 = very few milestones achieved for age
-- 0.2-0.4 = clearly limited milestone attainment
-- 0.4-0.6 = moderate milestone attainment
-- 0.6-0.8 = good milestone attainment
-- 0.8-1.0 = very high milestone attainment
-
-Impairment score:
-- 0.0-0.2 = very severe and/or numerous impairments
-- 0.2-0.4 = marked impairment burden
-- 0.4-0.6 = moderate impairment burden
-- 0.6-0.8 = mild impairment burden
-- 0.8-1.0 = minimal or no reported impairments
-
-IMPORTANT:
-- Base your assessment ONLY on the provided information
-- Be conservative
-- Prioritize structured data over narrative text
-- Keep the scores numerically aligned with a rule-based scoring system, not with a clinical impression scale
-- Return raw JSON only
-- Do NOT wrap the JSON in markdown code fences
-- Output MUST be in English
-- Use EXACTLY the required field names and no others
+══════════════════════════════════════════════════════════════
+RULES
+══════════════════════════════════════════════════════════════
+- The structured baseline shown in the prompt is your starting point,
+  not something to override lightly.
+- Prefer small, justified adjustments over large unsupported ones.
+- If the story adds nothing concrete, return the structured baseline values.
+- List every adjustment in story_adjustments with a brief explanation.
+- Return raw JSON only — no markdown fences.
+- Output MUST be in English.
 """
 
-    user_prompt = f"""Assess motor development for this record:
 
-{text}"""
+def estimate_motor_inputs(text: str, model_name: str = MODEL_NAME) -> MotorInputEstimate:
+    """
+    Call the LLM and return estimated input values.
 
-    messages = [{"role": "system", "content": system_prompt}]
+    Args:
+        text:       Formatted prompt text for one record.
+        model_name: Ollama model name.
 
-    for example in FEW_SHOT_EXAMPLES:
-        messages.append({"role": "user", "content": example["input"]})
-        messages.append({"role": "assistant", "content": example["output"]})
+    Returns:
+        MotorInputEstimate with the three estimated input values.
+    """
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    for ex in FEW_SHOT_EXAMPLES:
+        messages.append({"role": "user",      "content": ex["input"]})
+        messages.append({"role": "assistant", "content": ex["output"]})
+    messages.append({"role": "user", "content": text})
 
-    messages.append({"role": "user", "content": user_prompt})
-
-    def _call_llm():
+    def _call():
         return chat(
             model=model_name,
             messages=messages,
-            format=MotorAssessment.model_json_schema(),
-            options={"num_predict": 512, "temperature": 0.1},
+            format=MotorInputEstimate.model_json_schema(),
+            options={"num_predict": 512, "temperature": 0.0},
         )
 
     for attempt in range(CHAT_MAX_RETRIES + 1):
         try:
             with ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(_call_llm)
-                response = future.result(timeout=CHAT_TIMEOUT_SECONDS)
+                response = executor.submit(_call).result(timeout=CHAT_TIMEOUT_SECONDS)
             break
         except FuturesTimeoutError:
-            print(
-                f"    Timeout on attempt {attempt + 1}/{CHAT_MAX_RETRIES + 1} "
-                f"({CHAT_TIMEOUT_SECONDS}s), retrying..."
-            )
+            print(f"    Timeout attempt {attempt + 1}/{CHAT_MAX_RETRIES + 1}, retrying...")
             if attempt == CHAT_MAX_RETRIES:
                 raise RuntimeError(
-                    f"LLM timeout after {CHAT_MAX_RETRIES + 1} attempts "
-                    f"({CHAT_TIMEOUT_SECONDS}s per attempt)"
+                    f"LLM timeout after {CHAT_MAX_RETRIES + 1} attempts"
                 )
 
-    cleaned_response = extract_json_content(response.message.content)
-    repaired_response = repair_json_text(cleaned_response)
-    normalized_response = normalize_motor_assessment_keys(repaired_response)
+    raw      = extract_json_content(response.message.content)
+    repaired = repair_json_text(raw)
 
     try:
-        return MotorAssessment.model_validate_json(normalized_response)
+        return MotorInputEstimate.model_validate_json(repaired)
     except Exception:
-        print("\nRaw model output:")
-        print(response.message.content)
-        print("\nCleaned / repaired output:")
-        print(repaired_response)
-        print("\nNormalized output:")
-        print(normalized_response)
+        print("\nRaw output:\n", response.message.content)
+        print("\nRepaired:\n", repaired)
         raise
 
 
-# ---------------------------
+# ─────────────────────────────────────────────────────────────────────────────
 # ANALYZE ONE CHILD
-# ---------------------------
+# ─────────────────────────────────────────────────────────────────────────────
 
-def analyze_child(df, introductory_id: str) -> list[dict]:
+def analyze_child(
+    df: pl.DataFrame,
+    introductory_id: str,
+    gmfcs_lookup: dict[str, int],
+) -> list[dict]:
     """
-    Analyze all motorical development rows for one child, scoring cumulatively.
- 
-    Milestones observed in earlier age periods are extracted from the structured
-    data and forwarded to each subsequent LLM call so that the milestone score
-    is cumulative — matching the rule-based approach in
-    motorscore_milestones_setvalue().
- 
-    Impairment scoring is intentionally NOT cumulative: impairments are assessed
-    per age period, reflecting the child's current burden at that point in time,
-    which is also how the rule-based system works.
- 
+    Analyze all motorical development rows for one child.
+
+    For each age period:
+      1. LLM estimates input values (with story adjustments).
+      2. Python applies the exact formula to compute scores.
+
     Args:
-        df (pl.DataFrame): Motorical development table.
-        introductory_id (str): Child/survey id.
- 
+        df:              Motorical development table.
+        introductory_id: Child/survey id.
+        gmfcs_lookup:    Mapping from introductory_id → GMFCS integer (1–5).
+
     Returns:
-        list[dict]: One result dict per age row.
+        list[dict]: One result dict per age row, containing both the LLM
+                    estimates and the Python-computed scores.
     """
-    import polars as pl
- 
-    df_child = (
-        df.filter(pl.col("introductory_id") == introductory_id)
-        .sort("age")
-    )
- 
+    df_child = df.filter(pl.col("introductory_id") == introductory_id).sort("age")
+
     if df_child.height == 0:
         return []
- 
+
+    gmfcs_int = gmfcs_lookup.get(introductory_id, 3)
+
     child_results: list[dict] = []
-    seen_milestones: set[str] = set()   # cumulative across age periods
- 
+    seen_milestones: set[str] = set()   # cumulative keys from structured data
+
     for row in df_child.iter_rows(named=True):
         age = row.get("age")
- 
-        import time
         row_start = time.perf_counter()
- 
-        # Pass whatever has been seen so far (empty set on first iteration)
-        text_input = build_md_input(row, prior_milestones=seen_milestones or None)
-        print(f"    Sending input for age {age} "
-              f"({len(text_input)} chars, "
-              f"{len(seen_milestones)} prior milestones)...")
- 
+
+        possible = _possible_milestones(int(age), gmfcs_int)
+        n_named  = _n_named(int(age), gmfcs_int)
+
+        text_input = build_md_input(row, gmfcs_int=gmfcs_int, prior_milestones=seen_milestones or None)
+        print(
+            f"    age={age}, GMFCS={gmfcs_int}, "
+            f"prior={len(seen_milestones)}, ceiling={possible}, n_named={n_named}"
+        )
+
         try:
-            result = analyze_md_row(text_input)
+            estimate = estimate_motor_inputs(text_input)
         except RuntimeError as e:
             print(f"    Age {age} SKIPPED: {e}")
-            # Still update seen_milestones so subsequent ages are not affected
             seen_milestones |= _extract_row_milestone_keys(row)
             continue
         except Exception as e:
-            print(f"    Age {age} ERROR (unexpected): {e}")
+            print(f"    Age {age} ERROR: {e}")
             seen_milestones |= _extract_row_milestone_keys(row)
             continue
- 
+
+        # ── Apply exact formula in Python ──────────────────────────────────
+        scores = apply_formula(
+            cum_milestones = estimate.estimated_cum_milestones,
+            n_selected     = estimate.estimated_n_selected,
+            sum_ratings    = estimate.estimated_sum_ratings,
+            possible       = possible,
+            n_named        = n_named,
+        )
+
         elapsed = time.perf_counter() - row_start
-        print(f"    Age {age} done in {elapsed:.2f}s.")
- 
+        print(
+            f"    Done in {elapsed:.2f}s. "
+            f"milestones={estimate.estimated_cum_milestones}/{possible} → {scores['milestone_score']:.3f} | "
+            f"imp={estimate.estimated_n_selected}/{n_named} sum={estimate.estimated_sum_ratings:.1f} → {scores['impairment_score']:.3f} | "
+            f"combined={scores['combined_score']:.3f}"
+        )
+
+        # Structured baseline for audit
+        struct_n_sel, struct_sum = _structured_impairment_values(row)
+        struct_milestones = len(seen_milestones) + len(_extract_row_milestone_keys(row))
+        struct_scores = apply_formula(struct_milestones, struct_n_sel, struct_sum, possible, n_named)
+
         child_results.append({
-            "introductory_id": row.get("introductory_id"),
-            "age": age,
-            "llm_milestone_score":  result.llm_milestone_score,
-            "llm_impairment_score": result.llm_impairment_score,
-            "llm_combined_score":   result.llm_combined_score,
-            "confidence":           result.confidence,
-            "summary":              result.summary,
-            "supporting_evidence":  " | ".join(result.supporting_evidence),
+            "introductory_id":              row.get("introductory_id"),
+            "age":                          age,
+            "gmfcs_int":                    gmfcs_int,
+            # LLM estimates
+            "est_cum_milestones":           estimate.estimated_cum_milestones,
+            "est_n_selected":               estimate.estimated_n_selected,
+            "est_sum_ratings":              estimate.estimated_sum_ratings,
+            # Scores from LLM-adjusted inputs (main output)
+            "llm_milestone_score":          scores["milestone_score"],
+            "llm_impairment_score":         scores["impairment_score"],
+            "llm_combined_score":           scores["combined_score"],
+            # Intermediate values for debugging
+            "presence_ratio":               scores["presence_ratio"],
+            "severity_ratio":               scores["severity_ratio"],
+            "impairment_burden":            scores["impairment_burden"],
+            # Structured-only baseline (for comparing LLM vs raw checkboxes)
+            "struct_milestone_score":       struct_scores["milestone_score"],
+            "struct_impairment_score":      struct_scores["impairment_score"],
+            "struct_combined_score":        struct_scores["combined_score"],
+            # Story adjustment metadata
+            "confidence":                   estimate.confidence,
+            "story_adjustments":            " | ".join(estimate.story_adjustments) if estimate.story_adjustments else "",
+            "summary":                      estimate.summary,
         })
- 
-        # Accumulate milestones AFTER scoring this age period
+
+        # Accumulate structured milestone keys for the next age period
         seen_milestones |= _extract_row_milestone_keys(row)
- 
+
     return child_results
-# ---------------------------
-# WRITE TEXT REPORT
-# ---------------------------
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# REPORT
+# ─────────────────────────────────────────────────────────────────────────────
 
 def write_text_report(
     results_df: pl.DataFrame,
     output_path: Path,
     total_elapsed_time: float,
 ) -> None:
-    """
-    Write a human-readable text report.
-
-    Args:
-        results_df (pl.DataFrame): Final results table.
-        output_path (Path): Path to output text file.
-        total_elapsed_time (float): Total runtime in seconds.
-
-    Returns:
-        None
-    """
-    lines: list[str] = []
-    lines.append("LLM MOTOR SCORE ANALYSIS")
-    lines.append("=" * 80)
-    lines.append(f"Total runtime: {total_elapsed_time:.2f} seconds")
-    lines.append("")
+    lines: list[str] = ["LLM MOTOR SCORE ANALYSIS (Roll 2 — story-adjusted inputs)", "=" * 80,
+                        f"Total runtime: {total_elapsed_time:.2f} seconds", ""]
 
     if results_df.height == 0:
         lines.append("No results were generated.")
     else:
         for row in results_df.sort(["introductory_id", "age"]).iter_rows(named=True):
-            lines.append(f"Introductory ID: {row['introductory_id']}")
-            lines.append(f"Age: {row['age']}")
-            lines.append(f"LLM milestone score: {row['llm_milestone_score']:.3f}")
-            lines.append(f"LLM impairment score: {row['llm_impairment_score']:.3f}")
-            lines.append(f"LLM combined score: {row['llm_combined_score']:.3f}")
-            lines.append(f"Confidence: {row['confidence']}")
-            lines.append(f"Summary: {row['summary']}")
-            lines.append(f"Supporting evidence: {row['supporting_evidence']}")
+            lines.append(f"ID: {row['introductory_id']}  |  Age: {row['age']}  |  GMFCS: {row.get('gmfcs_int', '?')}")
+            lines.append(
+                f"  Milestones  : est={row['est_cum_milestones']}  "
+                f"→ llm_score={row['llm_milestone_score']:.3f}  "
+                f"(struct_only={row['struct_milestone_score']:.3f})"
+            )
+            lines.append(
+                f"  Impairments : est_n={row['est_n_selected']}  est_sum={row['est_sum_ratings']:.1f}  "
+                f"→ llm_score={row['llm_impairment_score']:.3f}  "
+                f"(struct_only={row['struct_impairment_score']:.3f})"
+            )
+            lines.append(
+                f"  Combined    : llm={row['llm_combined_score']:.3f}  "
+                f"struct_only={row['struct_combined_score']:.3f}"
+            )
+            lines.append(f"  Confidence  : {row['confidence']}")
+            if row["story_adjustments"]:
+                lines.append(f"  Story adj.  : {row['story_adjustments']}")
+            lines.append(f"  Summary     : {row['summary']}")
             lines.append("-" * 80)
 
     output_path.write_text("\n".join(lines), encoding="utf-8")
 
 
-# ---------------------------
-# MAIN FUNCTION
-# ---------------------------
+# ─────────────────────────────────────────────────────────────────────────────
+# MAIN
+# ─────────────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    """
-    Run LLM motor score analysis for all ids in INTRODUCTORY_IDS
-    and save results to output files.
-
-    Returns:
-        None
-    """
-    total_start_time = time.perf_counter()
+    total_start = time.perf_counter()
 
     conn = get_connection()
     data = load_data(conn)
-    df = data["motorical_development"]
+    df              = data["motorical_development"]
+    introductory_df = data["introductory"]
+
+    gmfcs_lookup: dict[str, int] = {
+        uid: _gmfcs_int_from_str(lvl)
+        for uid, lvl in zip(
+            introductory_df["id"].to_list(),
+            introductory_df["gmfcs_lvl"].to_list(),
+        )
+    }
 
     all_results: list[dict] = []
 
     for introductory_id in INTRODUCTORY_IDS:
-        child_start_time = time.perf_counter()
-        print(f"Processing introductory_id: {introductory_id}")
+        child_start = time.perf_counter()
+        print(f"Processing {introductory_id}  (GMFCS={gmfcs_lookup.get(introductory_id, '?')})")
 
         try:
-            child_results = analyze_child(df, introductory_id)
-
+            child_results = analyze_child(df, introductory_id, gmfcs_lookup)
             if not child_results:
-                print(f"  No motorical development rows found for {introductory_id}")
+                print(f"  No rows found.")
                 continue
-
             all_results.extend(child_results)
-
-            child_elapsed_time = time.perf_counter() - child_start_time
-            print(
-                f"  Done. Processed {len(child_results)} row(s) "
-                f"in {child_elapsed_time:.2f} seconds."
-            )
-
+            print(f"  Done. {len(child_results)} row(s) in {time.perf_counter() - child_start:.2f}s.")
         except Exception as e:
-            print(f"  Error for {introductory_id}: {e}")
+            print(f"  Error: {e}")
 
     results_df = pl.DataFrame(all_results) if all_results else pl.DataFrame()
 
     if results_df.height > 0:
         results_df.write_csv(OUTPUT_CSV_PATH)
 
-    total_elapsed_time = time.perf_counter() - total_start_time
+    total_elapsed = time.perf_counter() - total_start
+    write_text_report(results_df, OUTPUT_TXT_PATH, total_elapsed)
 
-    write_text_report(results_df, OUTPUT_TXT_PATH, total_elapsed_time)
-
-    print("\nFinished.")
-    print(f"Total runtime: {total_elapsed_time:.2f} seconds.")
-    print(f"Text report saved to: {OUTPUT_TXT_PATH}")
+    print(f"\nFinished in {total_elapsed:.2f}s.")
+    print(f"Report : {OUTPUT_TXT_PATH}")
     if results_df.height > 0:
-        print(f"CSV file saved to: {OUTPUT_CSV_PATH}")
+        print(f"CSV    : {OUTPUT_CSV_PATH}")
 
 
 if __name__ == "__main__":

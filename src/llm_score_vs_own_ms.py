@@ -1,18 +1,17 @@
 """
 llm_score_vs_own_ms.py
 ======================
-Compares LLM-derived motor scores against the project's rule-based scores.
+Compares LLM-derived motor scores against the project's rule-based scores,
+and visualises what the free-text story contributed beyond the checkboxes.
 
-Outputs:
-  - scatter plots (one per score type, grouped in one figure)
-  - Bland-Altman plot for combined score
-  - MAE-by-age line chart
-  - summary metrics table figure
-  - outlier tables (top rows with largest absolute delta, one figure per score type)
-  - one joined CSV for manual investigation
+Kept figures:
+  - summary_table
+  - outliers_combined / outliers_milestone / outliers_impairment
 
-Note: This is not a validation of clinical accuracy — the LLM scores are an
-exploratory complement to the rule-based system, not a ground truth comparison.
+New figures:
+  - before_after_cards   : top story-driven adjustments shown as readable cards
+  - delta_distribution   : histogram of LLM − struct-only delta per score type
+  - scatter_adjustments  : struct-only (x) vs LLM (y), coloured by adjustment direction
 """
 
 import math
@@ -20,6 +19,7 @@ import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 import polars as pl
 
 # ── resolve imports ────────────────────────────────────────────────────────────
@@ -41,12 +41,11 @@ from src.preprocessing.motor_scores import (
 LLM_CSV    = PROJECT_ROOT / "outputs" / "motorscore_analysis" / "llm_motorscore_results.csv"
 OUTPUT_DIR = PROJECT_ROOT / "outputs" / "motorscore_comparison"
 IMAGES_DIR = OUTPUT_DIR / "images"
-JOINED_CSV = OUTPUT_DIR / "llm_vs_manual_joined.csv"   # useful for manual outlier lookup
+JOINED_CSV = OUTPUT_DIR / "llm_vs_manual_joined.csv"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
-# ── matplotlib style ───────────────────────────────────────────────────────────
 plt.rcParams.update({
     "font.family":       "DejaVu Sans",
     "axes.spines.top":   False,
@@ -56,17 +55,16 @@ plt.rcParams.update({
     "figure.dpi":        150,
 })
 
+
 # ══════════════════════════════════════════════════════════════════════════════
-# Pure-Python statistics helpers (no scipy)
+# Statistics helpers
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _clean(series: pl.Series) -> list[float]:
     return [float(x) for x in series.to_list() if x is not None]
 
-
 def _mean(v: list[float]) -> float | None:
     return sum(v) / len(v) if v else None
-
 
 def _pearson(x: list[float], y: list[float]) -> float | None:
     if len(x) != len(y) or len(x) < 2:
@@ -77,7 +75,6 @@ def _pearson(x: list[float], y: list[float]) -> float | None:
     num   = sum(a * b for a, b in zip(dx, dy))
     denom = math.sqrt(sum(a**2 for a in dx)) * math.sqrt(sum(b**2 for b in dy))
     return num / denom if denom else None
-
 
 def _rank(v: list[float]) -> list[float]:
     pairs = sorted(enumerate(v), key=lambda t: t[1])
@@ -93,18 +90,14 @@ def _rank(v: list[float]) -> list[float]:
         i = j + 1
     return ranks
 
-
 def _spearman(x: list[float], y: list[float]) -> float | None:
     return _pearson(_rank(x), _rank(y)) if len(x) == len(y) and len(x) >= 2 else None
-
 
 def _mae(x: list[float], y: list[float]) -> float | None:
     return sum(abs(a - b) for a, b in zip(x, y)) / len(x) if x and len(x) == len(y) else None
 
-
 def _bias(x: list[float], y: list[float]) -> float | None:
     return sum(a - b for a, b in zip(x, y)) / len(x) if x and len(x) == len(y) else None
-
 
 def _fmt(v, d: int = 3) -> str:
     if v is None:
@@ -119,11 +112,9 @@ def _fmt(v, d: int = 3) -> str:
 def build_manual_scores(data: dict) -> pl.DataFrame:
     md  = data["motorical_development"]
     inf = data["introductory"]
-
     ms  = motorscore_milestones_setvalue(md, inf)
     imp = motorscore_impairments_setvalue(md, inf)
     com = motorscore_combined(ms, imp)
-
     return (
         ms
         .join(imp.select(["introductory_id", "age", "mms_normalized"]),
@@ -138,8 +129,10 @@ def load_llm_results() -> pl.DataFrame:
     if not LLM_CSV.exists():
         raise FileNotFoundError(f"LLM results not found: {LLM_CSV}")
     df = pl.read_csv(LLM_CSV)
-    required = {"introductory_id", "age", "llm_milestone_score",
-                "llm_impairment_score", "llm_combined_score"}
+    required = {"introductory_id", "age",
+                "llm_milestone_score", "llm_impairment_score", "llm_combined_score",
+                "struct_milestone_score", "struct_impairment_score", "struct_combined_score",
+                "story_adjustments", "est_cum_milestones", "est_n_selected", "est_sum_ratings"}
     if missing := required - set(df.columns):
         raise ValueError(f"Missing columns in LLM CSV: {sorted(missing)}")
     return df.sort(["introductory_id", "age"])
@@ -150,19 +143,24 @@ def build_comparison_df(manual: pl.DataFrame, llm: pl.DataFrame) -> pl.DataFrame
         manual
         .join(llm, on=["introductory_id", "age"], how="inner")
         .with_columns([
+            # LLM (story-adjusted) vs rule-based
             (pl.col("llm_milestone_score")  - pl.col("milestone_score")).alias("delta_milestone"),
             (pl.col("llm_impairment_score") - pl.col("mms_normalized") ).alias("delta_impairment"),
             (pl.col("llm_combined_score")   - pl.col("combined_score") ).alias("delta_combined"),
             (pl.col("llm_milestone_score")  - pl.col("milestone_score")).abs().alias("abs_delta_milestone"),
             (pl.col("llm_impairment_score") - pl.col("mms_normalized") ).abs().alias("abs_delta_impairment"),
             (pl.col("llm_combined_score")   - pl.col("combined_score") ).abs().alias("abs_delta_combined"),
+            # Story contribution: LLM vs struct-only (checkboxes alone)
+            (pl.col("llm_milestone_score")  - pl.col("struct_milestone_score") ).alias("story_delta_milestone"),
+            (pl.col("llm_impairment_score") - pl.col("struct_impairment_score")).alias("story_delta_impairment"),
+            (pl.col("llm_combined_score")   - pl.col("struct_combined_score")  ).alias("story_delta_combined"),
         ])
         .sort(["introductory_id", "age"])
     )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Aggregate summaries
+# Summary metrics
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _eval_pair(df: pl.DataFrame, llm_col: str, man_col: str, label: str) -> dict:
@@ -180,7 +178,6 @@ def _eval_pair(df: pl.DataFrame, llm_col: str, man_col: str, label: str) -> dict
         mean_manual           = _mean(y),
     )
 
-
 def build_summary_df(cdf: pl.DataFrame) -> pl.DataFrame:
     return pl.DataFrame([
         _eval_pair(cdf, "llm_milestone_score",  "milestone_score", "milestone"),
@@ -189,118 +186,9 @@ def build_summary_df(cdf: pl.DataFrame) -> pl.DataFrame:
     ])
 
 
-def build_age_summary(cdf: pl.DataFrame) -> pl.DataFrame:
-    return (
-        cdf
-        .group_by("age")
-        .agg([
-            pl.len().alias("n"),
-            pl.col("abs_delta_milestone") .mean().alias("mae_milestone"),
-            pl.col("abs_delta_impairment").mean().alias("mae_impairment"),
-            pl.col("abs_delta_combined")  .mean().alias("mae_combined"),
-            pl.col("delta_milestone")     .mean().alias("bias_milestone"),
-            pl.col("delta_impairment")    .mean().alias("bias_impairment"),
-            pl.col("delta_combined")      .mean().alias("bias_combined"),
-        ])
-        .sort("age")
-    )
-
-
 # ══════════════════════════════════════════════════════════════════════════════
-# Figures
+# Figure 1 (kept): Summary table
 # ══════════════════════════════════════════════════════════════════════════════
-
-def make_scatter_grid(cdf: pl.DataFrame) -> None:
-    """3 scatter plots in one figure."""
-    pairs = [
-        ("milestone_score", "llm_milestone_score", "Milestone"),
-        ("mms_normalized",  "llm_impairment_score","Impairment"),
-        ("combined_score",  "llm_combined_score",  "Combined"),
-    ]
-
-    fig, axes = plt.subplots(1, 3, figsize=(13, 4.5))
-    fig.suptitle("LLM vs rule-based motor scores", fontsize=12, fontweight="bold", y=1.01)
-
-    for ax, (man_col, llm_col, label) in zip(axes, pairs):
-        sub = cdf.select([man_col, llm_col]).drop_nulls()
-        x   = _clean(sub[man_col])
-        y   = _clean(sub[llm_col])
-
-        ax.scatter(x, y, alpha=0.75, color="#4C72B0",
-                   edgecolors="white", linewidths=0.4, s=55, zorder=3)
-        ax.plot([0, 1], [0, 1], color="#999999", linestyle="--", linewidth=1.2, zorder=2)
-        ax.set_xlim(-0.05, 1.05)
-        ax.set_ylim(-0.05, 1.05)
-        ax.set_xlabel(f"Rule-based ({label})", fontsize=9)
-        ax.set_ylabel(f"LLM ({label})", fontsize=9)
-        ax.set_title(label, fontsize=10, fontweight="bold")
-        ax.annotate(
-            f"r = {_fmt(_pearson(x, y))}\nρ = {_fmt(_spearman(x, y))}",
-            xy=(0.05, 0.93), xycoords="axes fraction", fontsize=8, va="top",
-            bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.75),
-        )
-
-    plt.tight_layout()
-    plt.savefig(IMAGES_DIR / "scatter_all_scores.png", dpi=200, bbox_inches="tight")
-    plt.close()
-    print("  Saved scatter_all_scores.png")
-
-
-def make_bland_altman(cdf: pl.DataFrame) -> None:
-    """Bland-Altman for the combined score."""
-    sub = (
-        cdf.select(["llm_combined_score", "combined_score"]).drop_nulls()
-        .with_columns([
-            ((pl.col("llm_combined_score") + pl.col("combined_score")) / 2).alias("avg"),
-            (pl.col("llm_combined_score") - pl.col("combined_score")).alias("diff"),
-        ])
-    )
-    avgs  = _clean(sub["avg"])
-    diffs = _clean(sub["diff"])
-    md    = _mean(diffs)
-    sd    = math.sqrt(sum((d - md)**2 for d in diffs) / (len(diffs) - 1)) if len(diffs) > 1 else 0.0
-    lo, hi = md - 1.96 * sd, md + 1.96 * sd
-
-    fig, ax = plt.subplots(figsize=(7, 4.5))
-    ax.scatter(avgs, diffs, color="#DD8452", alpha=0.75,
-               edgecolors="white", linewidths=0.4, s=55, zorder=3)
-    ax.axhline(md, color="#333333", linestyle="--", linewidth=1.3,
-               label=f"Mean diff = {md:.3f}")
-    ax.axhline(hi, color="#aaaaaa", linestyle=":", linewidth=1.1,
-               label=f"+1.96 SD = {hi:.3f}")
-    ax.axhline(lo, color="#aaaaaa", linestyle=":", linewidth=1.1,
-               label=f"−1.96 SD = {lo:.3f}")
-    ax.set_xlabel("Mean of LLM and rule-based combined score", fontsize=9)
-    ax.set_ylabel("LLM − rule-based", fontsize=9)
-    ax.set_title("Bland-Altman: combined score", fontsize=10, fontweight="bold")
-    ax.legend(fontsize=8)
-    plt.tight_layout()
-    plt.savefig(IMAGES_DIR / "bland_altman_combined.png", dpi=200, bbox_inches="tight")
-    plt.close()
-    print("  Saved bland_altman_combined.png")
-
-
-def make_mae_by_age(age_sum: pl.DataFrame) -> None:
-    sub  = age_sum.select(["age", "mae_milestone", "mae_impairment", "mae_combined"]).sort("age")
-    ages = sub["age"].to_list()
-
-    fig, ax = plt.subplots(figsize=(6, 4))
-    for col, label, color in [
-        ("mae_milestone",  "Milestone",  "#4C72B0"),
-        ("mae_impairment", "Impairment", "#DD8452"),
-        ("mae_combined",   "Combined",   "#55A868"),
-    ]:
-        ax.plot(ages, _clean(sub[col]), marker="o", label=label, color=color, linewidth=1.8)
-
-    ax.set_xlabel("Age bucket", fontsize=9)
-    ax.set_ylabel("MAE", fontsize=9)
-    ax.set_title("Mean absolute error by age", fontsize=10, fontweight="bold")
-    ax.legend(fontsize=8)
-    plt.tight_layout()
-    plt.savefig(IMAGES_DIR / "mae_by_age.png", dpi=200, bbox_inches="tight")
-    plt.close()
-    print("  Saved mae_by_age.png")
-
 
 def make_summary_table(sum_df: pl.DataFrame) -> None:
     headers   = ["Score", "n", "Pearson r", "Spearman ρ", "MAE", "Bias (LLM−rule)"]
@@ -333,17 +221,11 @@ def make_summary_table(sum_df: pl.DataFrame) -> None:
     print("  Saved summary_table.png")
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# Figures 2–4 (kept): Outlier tables
+# ══════════════════════════════════════════════════════════════════════════════
+
 def make_outlier_tables(cdf: pl.DataFrame, top_n: int = 15) -> None:
-    """
-    For each score type, produce a ranked table of the rows with the largest
-    absolute discrepancy between LLM and rule-based scores.
-
-    Δ > 0 (red)  → LLM scored higher than rule-based
-    Δ < 0 (green)→ LLM scored lower than rule-based
-
-    The full introductory_id is preserved in the tooltip column so the analyst
-    can cross-reference JOINED_CSV for deeper investigation.
-    """
     score_configs = [
         ("abs_delta_combined",   "delta_combined",   "llm_combined_score",   "combined_score",  "Combined"),
         ("abs_delta_milestone",  "delta_milestone",  "llm_milestone_score",  "milestone_score", "Milestone"),
@@ -362,16 +244,15 @@ def make_outlier_tables(cdf: pl.DataFrame, top_n: int = 15) -> None:
         cell_colors = []
 
         for row in top.iter_rows(named=True):
-            delta     = row[delta_col]
-            short_id  = str(row["introductory_id"])[:8] + "…"
-            d_bg      = "#ffd6d6" if delta > 0 else "#d6f5d6"
-            abs_bg    = "#f0f0f0"
+            delta    = row[delta_col]
+            short_id = str(row["introductory_id"])[:8] + "…"
+            d_bg     = "#ffd6d6" if delta > 0 else "#d6f5d6"
             cell_text.append([
                 short_id, str(row["age"]),
                 _fmt(row[llm_col]), _fmt(row[man_col]),
                 f"{delta:+.3f}", _fmt(row[abs_col]),
             ])
-            cell_colors.append(["white", "white", "white", "white", d_bg, abs_bg])
+            cell_colors.append(["white", "white", "white", "white", d_bg, "#f0f0f0"])
 
         headers = ["ID (first 8)", "Age", f"LLM {label}", f"Rule {label}", "Δ (LLM−rule)", "|Δ|"]
 
@@ -396,10 +277,252 @@ def make_outlier_tables(cdf: pl.DataFrame, top_n: int = 15) -> None:
             fontsize=9, fontweight="bold", pad=10,
         )
         plt.tight_layout()
-        out = IMAGES_DIR / f"outliers_{label.lower()}.png"
-        plt.savefig(out, dpi=200, bbox_inches="tight")
+        plt.savefig(IMAGES_DIR / f"outliers_{label.lower()}.png", dpi=200, bbox_inches="tight")
         plt.close()
         print(f"  Saved outliers_{label.lower()}.png")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Figure 5 (new): Before/after cards — top story-driven adjustments
+# ══════════════════════════════════════════════════════════════════════════════
+
+def make_before_after_cards(cdf: pl.DataFrame, n_cards: int = 8) -> None:
+    """
+    Show the rows where the story caused the largest score change
+    (|story_delta_combined| is largest), displayed as readable cards.
+
+    Each card shows:
+      - Child ID (short) and age
+      - Checkbox-only score  vs  story-adjusted score
+      - The story_adjustments text (what the LLM actually changed)
+    """
+    # Filter rows where story actually changed something
+    changed = cdf.filter(pl.col("story_adjustments") != "")
+
+    if changed.height == 0:
+        print("  No story adjustments found — skipping before/after cards.")
+        return
+
+    # Absolute combined delta caused by story
+    changed = changed.with_columns(
+        pl.col("story_delta_combined").abs().alias("abs_story_delta")
+    )
+    top = changed.sort("abs_story_delta", descending=True).head(n_cards)
+
+    n_cols = 2
+    n_rows = math.ceil(n_cards / n_cols)
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(14, n_rows * 3.6))
+    axes = axes.flatten()
+    fig.suptitle(
+        "Story-driven adjustments — top cases where free text changed the score",
+        fontsize=12, fontweight="bold", y=1.01,
+    )
+
+    GREEN = "#27ae60"
+    RED   = "#c0392b"
+    GREY  = "#7f8c8d"
+
+    for i, row in enumerate(top.iter_rows(named=True)):
+        ax = axes[i]
+        ax.axis("off")
+
+        short_id    = str(row["introductory_id"])[:8] + "…"
+        age         = row["age"]
+        s_ms        = row["struct_milestone_score"]
+        s_imp       = row["struct_impairment_score"]
+        s_com       = row["struct_combined_score"]
+        l_ms        = row["llm_milestone_score"]
+        l_imp       = row["llm_impairment_score"]
+        l_com       = row["llm_combined_score"]
+        delta_com   = row["story_delta_combined"]
+        adjustments = str(row["story_adjustments"] or "")
+
+        # Card background
+        ax.add_patch(mpatches.FancyBboxPatch(
+            (0, 0), 1, 1, transform=ax.transAxes, clip_on=False,
+            boxstyle="round,pad=0.02", linewidth=1.2,
+            edgecolor="#bdc3c7", facecolor="#fafafa",
+        ))
+
+        # Header
+        header_color = GREEN if delta_com > 0 else RED
+        direction    = "▲ Story raised score" if delta_com > 0 else "▼ Story lowered score"
+        ax.text(0.5, 0.95, f"ID: {short_id}  |  Age: {age}  |  {direction}",
+                transform=ax.transAxes, ha="center", va="top",
+                fontsize=9, fontweight="bold", color=header_color)
+
+        # Score comparison row
+        score_y = 0.80
+        for col_x, lbl, sv, lv in [
+            (0.18, "Milestone",  s_ms,  l_ms),
+            (0.50, "Impairment", s_imp, l_imp),
+            (0.82, "Combined",   s_com, l_com),
+        ]:
+            d = lv - sv
+            d_col = GREEN if d > 0 else (RED if d < 0 else GREY)
+            ax.text(col_x, score_y + 0.06, lbl, transform=ax.transAxes,
+                    ha="center", va="top", fontsize=7.5, color=GREY)
+            ax.text(col_x, score_y - 0.01,
+                    f"Checkbox: {sv:.2f}\nStory-adj: {lv:.2f}",
+                    transform=ax.transAxes, ha="center", va="top",
+                    fontsize=8.5, color="#2c3e50")
+            ax.text(col_x, score_y - 0.18, f"Δ {d:+.2f}",
+                    transform=ax.transAxes, ha="center", va="top",
+                    fontsize=9, fontweight="bold", color=d_col)
+
+        # Divider
+        ax.axhline(0.55, xmin=0.03, xmax=0.97, color="#bdc3c7", linewidth=0.8)
+
+        # Story adjustments text
+        # Wrap each pipe-separated bullet into its own line
+        bullets = [a.strip() for a in adjustments.split("|") if a.strip()]
+        max_bullets = 4
+        display = bullets[:max_bullets]
+        if len(bullets) > max_bullets:
+            display.append(f"… +{len(bullets) - max_bullets} more")
+
+        text_block = "\n".join(f"• {b}" for b in display)
+        ax.text(0.03, 0.50, text_block,
+                transform=ax.transAxes, ha="left", va="top",
+                fontsize=7.5, color="#2c3e50",
+                wrap=True, linespacing=1.5,
+                bbox=dict(facecolor="white", edgecolor="none", alpha=0))
+
+    # Hide unused axes
+    for j in range(i + 1, len(axes)):
+        axes[j].set_visible(False)
+
+    plt.tight_layout()
+    plt.savefig(IMAGES_DIR / "before_after_cards.png", dpi=200, bbox_inches="tight")
+    plt.close()
+    print("  Saved before_after_cards.png")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Figure 6 (new): Delta distribution — how much did the story change scores?
+# ══════════════════════════════════════════════════════════════════════════════
+
+def make_delta_distribution(cdf: pl.DataFrame) -> None:
+    """
+    Histogram of (LLM − struct-only) for each score type.
+    Distribution centred on 0 → story changes little.
+    Wide spread → story carries real information.
+    """
+    cols = [
+        ("story_delta_milestone",  "Milestone",  "#4C72B0"),
+        ("story_delta_impairment", "Impairment", "#DD8452"),
+        ("story_delta_combined",   "Combined",   "#55A868"),
+    ]
+
+    fig, axes = plt.subplots(1, 3, figsize=(13, 4), sharey=False)
+    fig.suptitle(
+        "Story contribution: distribution of (story-adjusted − checkbox-only) score",
+        fontsize=11, fontweight="bold", y=1.02,
+    )
+
+    for ax, (col, label, color) in zip(axes, cols):
+        vals = _clean(cdf[col])
+        if not vals:
+            ax.set_visible(False)
+            continue
+
+        n_bins = min(25, max(10, len(vals) // 4))
+        ax.hist(vals, bins=n_bins, color=color, alpha=0.82, edgecolor="white", linewidth=0.6)
+        ax.axvline(0,        color="#333333", linewidth=1.4, linestyle="--", label="No change")
+        ax.axvline(_mean(vals), color="#c0392b", linewidth=1.4, linestyle="-",
+                   label=f"Mean = {_mean(vals):+.3f}")
+
+        # Annotate proportion that changed
+        n_changed   = sum(1 for v in vals if abs(v) > 0.01)
+        pct_changed = 100 * n_changed / len(vals)
+        ax.annotate(
+            f"{pct_changed:.0f}% of rows\nadjusted by story",
+            xy=(0.97, 0.97), xycoords="axes fraction", ha="right", va="top",
+            fontsize=8, bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.8),
+        )
+
+        ax.set_xlabel("Score change from story", fontsize=9)
+        ax.set_ylabel("Count", fontsize=9)
+        ax.set_title(label, fontsize=10, fontweight="bold")
+        ax.legend(fontsize=7.5)
+
+    plt.tight_layout()
+    plt.savefig(IMAGES_DIR / "delta_distribution.png", dpi=200, bbox_inches="tight")
+    plt.close()
+    print("  Saved delta_distribution.png")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Figure 7 (new): Scatter struct-only vs LLM, coloured by adjustment direction
+# ══════════════════════════════════════════════════════════════════════════════
+
+def make_scatter_adjustments(cdf: pl.DataFrame) -> None:
+    """
+    X = struct-only (checkbox) score
+    Y = LLM story-adjusted score
+    Colour:
+      green  → story raised the score  (delta > +0.02)
+      red    → story lowered the score (delta < -0.02)
+      grey   → story changed nothing   (|delta| ≤ 0.02)
+    """
+    score_triples = [
+        ("struct_milestone_score",  "llm_milestone_score",  "story_delta_milestone",  "Milestone"),
+        ("struct_impairment_score", "llm_impairment_score", "story_delta_impairment", "Impairment"),
+        ("struct_combined_score",   "llm_combined_score",   "story_delta_combined",   "Combined"),
+    ]
+
+    THRESHOLD = 0.02
+    COL_UP   = "#27ae60"   # story added information → score went up
+    COL_DOWN = "#c0392b"   # story corrected downward
+    COL_NONE = "#95a5a6"   # no meaningful change
+
+    fig, axes = plt.subplots(1, 3, figsize=(13, 4.5))
+    fig.suptitle(
+        "Checkbox-only score (x) vs story-adjusted score (y)\n"
+        "Colour shows direction of story-driven adjustment",
+        fontsize=11, fontweight="bold", y=1.03,
+    )
+
+    for ax, (struct_col, llm_col, delta_col, label) in zip(axes, score_triples):
+        sub = cdf.select([struct_col, llm_col, delta_col]).drop_nulls()
+
+        xs     = _clean(sub[struct_col])
+        ys     = _clean(sub[llm_col])
+        deltas = _clean(sub[delta_col])
+
+        colors = [
+            COL_UP   if d >  THRESHOLD else
+            COL_DOWN if d < -THRESHOLD else
+            COL_NONE
+            for d in deltas
+        ]
+
+        n_up   = sum(1 for d in deltas if d >  THRESHOLD)
+        n_down = sum(1 for d in deltas if d < -THRESHOLD)
+        n_none = len(deltas) - n_up - n_down
+
+        ax.scatter(xs, ys, c=colors, alpha=0.80, s=55,
+                   edgecolors="white", linewidths=0.4, zorder=3)
+        ax.plot([0, 1], [0, 1], color="#aaaaaa", linestyle="--",
+                linewidth=1.1, zorder=2, label="No change line")
+
+        ax.set_xlim(-0.05, 1.05)
+        ax.set_ylim(-0.05, 1.05)
+        ax.set_xlabel("Checkbox-only score", fontsize=9)
+        ax.set_ylabel("Story-adjusted score", fontsize=9)
+        ax.set_title(label, fontsize=10, fontweight="bold")
+
+        legend_handles = [
+            mpatches.Patch(color=COL_UP,   label=f"Story raised  (n={n_up})"),
+            mpatches.Patch(color=COL_DOWN, label=f"Story lowered (n={n_down})"),
+            mpatches.Patch(color=COL_NONE, label=f"Unchanged     (n={n_none})"),
+        ]
+        ax.legend(handles=legend_handles, fontsize=7.5, loc="upper left")
+
+    plt.tight_layout()
+    plt.savefig(IMAGES_DIR / "scatter_adjustments.png", dpi=200, bbox_inches="tight")
+    plt.close()
+    print("  Saved scatter_adjustments.png")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -421,23 +544,20 @@ def main() -> None:
 
     print(f"Comparing {cdf.height} rows across {cdf['introductory_id'].n_unique()} children.\n")
 
-    sum_df  = build_summary_df(cdf)
-    age_sum = build_age_summary(cdf)
+    sum_df = build_summary_df(cdf)
 
-    # ── save joined CSV — useful for manual investigation ─────────────────────
+    # Save joined CSV for manual investigation
     cdf.write_csv(JOINED_CSV)
-    print(f"Joined CSV saved: {JOINED_CSV}")
-    print("  Tip: sort by abs_delta_combined to find the largest discrepancies.\n")
+    print(f"Joined CSV saved: {JOINED_CSV}\n")
 
-    # ── figures ───────────────────────────────────────────────────────────────
     print("Building figures…")
-    make_scatter_grid(cdf)
-    make_bland_altman(cdf)
-    make_mae_by_age(age_sum)
     make_summary_table(sum_df)
     make_outlier_tables(cdf, top_n=15)
+    make_before_after_cards(cdf, n_cards=8)
+    make_delta_distribution(cdf)
+    make_scatter_adjustments(cdf)
 
-    # ── console summary ────────────────────────────────────────────────────────
+    # Console summary
     print("\n── Summary ─────────────────────────────────────────────────────────")
     for row in sum_df.iter_rows(named=True):
         print(
@@ -446,6 +566,20 @@ def main() -> None:
             f"ρ={_fmt(row['spearman_rho'])}  "
             f"MAE={_fmt(row['mae'])}  "
             f"bias={_fmt(row['bias_llm_minus_manual'])}"
+        )
+
+    # Story contribution summary
+    print("\n── Story contribution ───────────────────────────────────────────────")
+    for col, label in [
+        ("story_delta_milestone",  "Milestone"),
+        ("story_delta_impairment", "Impairment"),
+        ("story_delta_combined",   "Combined"),
+    ]:
+        vals      = _clean(cdf[col])
+        n_changed = sum(1 for v in vals if abs(v) > 0.01)
+        print(
+            f"  {label:12s}  mean Δ={_fmt(_mean(vals))}  "
+            f"rows changed={n_changed}/{len(vals)} ({100*n_changed//len(vals)}%)"
         )
 
     print(f"\nAll figures → {IMAGES_DIR}")
