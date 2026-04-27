@@ -98,8 +98,8 @@ def build_analysis_dataset(data: dict[str, pl.DataFrame]) -> pd.DataFrame:
         )
         .with_columns(
             pl.when(pl.col("has_intensive_therapy") == 1)
-            .then(pl.lit("Intensivträning: Ja"))
-            .otherwise(pl.lit("Intensivträning: Nej"))
+            .then(pl.lit("Intensive therapy: Yes"))
+            .otherwise(pl.lit("Intensive therapy: No"))
             .alias("therapy_group")
         )
     )
@@ -110,14 +110,13 @@ def build_analysis_dataset(data: dict[str, pl.DataFrame]) -> pd.DataFrame:
 # ════════════════════════════════════════════════════════════════════════════
 # 2. Beskrivande statistik
 # ════════════════════════════════════════════════════════════════════════════
-
 SCORE_COLS = {
-    "milestone_score_setvalue":    "Milstolpepoäng (normerad)",
-    "impairment_score_setvalue":   "Nedsättningspoäng (normerad)",
-    "combined_score_setvalue":     "Kombinerad poäng (normerad)",
-    "milestone_score":             "Milstolpepoäng (relativ ålder)",
-    "impairment_score":            "Nedsättningspoäng (relativ ålder)",
-    "combined_score":              "Kombinerad poäng (relativ ålder)",
+    "milestone_score_setvalue":    "Milestone score (normalized)",
+    "impairment_score_setvalue":   "Impairment score (normalized)",
+    "combined_score_setvalue":     "Combined score (normalized)",
+    "milestone_score":             "Milestone score (age-relative)",
+    "impairment_score":            "Impairment score (age-relative)",
+    "combined_score":              "Combined score (age-relative)",
 }
 
 
@@ -129,7 +128,7 @@ def descriptive_stats(df: pd.DataFrame) -> pd.DataFrame:
     for col, label in SCORE_COLS.items():
         if col not in df.columns:
             continue
-        for group_val, group_name in [(1, "Ja"), (0, "Nej")]:
+        for group_val, group_name in [(1, "Yes"), (0, "No")]:
             subset = df[df["has_intensive_therapy"] == group_val][col].dropna()
             rows.append({
                 "Score":  label,
@@ -153,7 +152,7 @@ def stats_per_age(df: pd.DataFrame) -> pd.DataFrame:
         if col not in df.columns:
             continue
         for age in sorted(df["age"].unique()):
-            for group_val, group_name in [(1, "Ja"), (0, "Nej")]:
+            for group_val, group_name in [(1, "Yes"), (0, "No")]:
                 subset = df[
                     (df["age"] == age) & (df["has_intensive_therapy"] == group_val)
                 ][col].dropna()
@@ -273,8 +272,8 @@ def print_summary(df: pd.DataFrame) -> None:
 # ════════════════════════════════════════════════════════════════════════════
 
 COLORS = {
-    "Ja":  "#2196F3",   # blå = intensivträning
-    "Nej": "#FF9800",   # orange = ingen intensivträning
+    "Yes": "#2196F3",
+    "No":  "#FF9800",
 }
 
 
@@ -283,10 +282,9 @@ def plot_boxplots(df: pd.DataFrame) -> None:
     Box plots: distribution av varje motorisk score per grupp.
     """
     score_pairs = [
-        ("combined_score_setvalue",   "Kombinerad poäng\n(normerad)"),
-        ("milestone_score_setvalue",  "Milstolpepoäng\n(normerad)"),
-        ("impairment_score_setvalue", "Nedsättningspoäng\n(normerad)"),
-        ("combined_score",            "Kombinerad poäng\n(relativ ålder)"),
+        ("milestone_score_setvalue",  "Milestone score\n(normalized)"),
+        ("impairment_score_setvalue", "Impairment score\n(normalized)"),
+        ("combined_score_setvalue",   "Combined score\n(normalized)"),
     ]
     score_pairs = [(c, l) for c, l in score_pairs if c in df.columns]
 
@@ -304,18 +302,18 @@ def plot_boxplots(df: pd.DataFrame) -> None:
             widths=0.5,
             medianprops=dict(color="black", linewidth=2),
         )
-        bp["boxes"][0].set_facecolor(COLORS["Nej"])
-        bp["boxes"][1].set_facecolor(COLORS["Ja"])
+        bp["boxes"][0].set_facecolor(COLORS["No"])
+        bp["boxes"][1].set_facecolor(COLORS["Yes"])
         bp["boxes"][0].set_alpha(0.75)
         bp["boxes"][1].set_alpha(0.75)
 
         ax.set_xticks([1, 2])
         ax.set_xticklabels([
-            f"Nej\n(n={len(data_no)})",
-            f"Ja\n(n={len(data_yes)})",
+            f"No\n(n={len(data_no)})",
+            f"Yes\n(n={len(data_yes)})",
         ])
         ax.set_title(label, fontsize=10)
-        ax.set_xlabel("Intensivträning")
+        ax.set_xlabel("Intensive therapy")
 
         # annotate mean diff
         diff = data_yes.mean() - data_no.mean()
@@ -329,7 +327,7 @@ def plot_boxplots(df: pd.DataFrame) -> None:
         )
 
     axes[0].set_ylabel("Score")
-    fig.suptitle("Motorisk score: Intensivträning Ja vs Nej", fontsize=13, fontweight="bold")
+    fig.suptitle("Motor scores: Intensive therapy Yes vs No", fontsize=13, fontweight="bold")
     plt.tight_layout()
     plt.savefig(FIGURES_DIR / "intensive_therapy_boxplots.png", dpi=150)
     print("  → Sparad: intensive_therapy_boxplots.png")
@@ -340,10 +338,9 @@ def plot_score_by_age(df: pd.DataFrame) -> None:
     Linjediagram: medelscores per åldersgrupp, uppdelat på grupp.
     """
     score_pairs = [
-        ("combined_score_setvalue",   "Kombinerad (normerad)"),
-        ("milestone_score_setvalue",  "Milstolpe (normerad)"),
-        ("impairment_score_setvalue", "Nedsättning (normerad)"),
-        ("combined_score",            "Kombinerad (relativ ålder)"),
+        ("milestone_score_setvalue",  "Milestone score (normalized)"),
+        ("impairment_score_setvalue", "Impairment score (normalized)"),
+        ("combined_score_setvalue",   "Combined score (normalized)"),
     ]
     score_pairs = [(c, l) for c, l in score_pairs if c in df.columns]
 
@@ -355,7 +352,7 @@ def plot_score_by_age(df: pd.DataFrame) -> None:
     ages = sorted(df["age"].unique())
 
     for ax, (col, label) in zip(axes, score_pairs):
-        for group_val, group_name in [(1, "Ja"), (0, "Nej")]:
+        for group_val, group_name in [(1, "Yes"), (0, "No")]:
             means, sems, age_ticks = [], [], []
             for age in ages:
                 subset = df[
@@ -371,7 +368,7 @@ def plot_score_by_age(df: pd.DataFrame) -> None:
                 age_ticks, means,
                 marker="o", linewidth=2,
                 color=COLORS[group_name],
-                label=f"Intensivträning: {group_name}",
+                label=f"Intensive therapy: {group_name}"
             )
             ax.fill_between(
                 age_ticks,
@@ -381,8 +378,8 @@ def plot_score_by_age(df: pd.DataFrame) -> None:
             )
 
         ax.set_title(label, fontsize=10)
-        ax.set_xlabel("Ålder (år)")
-        ax.set_ylabel("Medel score (±SE)")
+        ax.set_xlabel("Age (years)")
+        ax.set_ylabel("Mean score (±SE)")
         ax.set_xticks(ages)
         ax.legend(fontsize=8)
         ax.grid(axis="y", alpha=0.3)
@@ -390,7 +387,7 @@ def plot_score_by_age(df: pd.DataFrame) -> None:
     for j in range(len(score_pairs), 4):
         axes[j].set_visible(False)
 
-    fig.suptitle("Motorisk score per ålder — Intensivträning Ja vs Nej", fontsize=13, fontweight="bold")
+    fig.suptitle("Motor scores by age — Intensive therapy Yes vs No", fontsize=13, fontweight="bold")
     plt.tight_layout()
     plt.savefig(FIGURES_DIR / "intensive_therapy_by_age.png", dpi=150)
     print("  → Sparad: intensive_therapy_by_age.png")
@@ -422,9 +419,9 @@ def plot_participation_rate(df: pd.DataFrame) -> None:
             ha="center", va="bottom", fontsize=9,
         )
 
-    ax.set_xlabel("Ålder (år)")
-    ax.set_ylabel("Andel med intensivträning (%)")
-    ax.set_title("Deltagande i intensivträning per åldersgrupp", fontsize=12, fontweight="bold")
+    ax.set_xlabel("Age (years)")
+    ax.set_ylabel("Participation in intensive therapy (%)")
+    ax.set_title("Participation in intensive therapy by age group", fontsize=12, fontweight="bold")
     ax.set_ylim(0, 110)
     ax.set_xticks(age_rates["age"])
     ax.grid(axis="y", alpha=0.3)
@@ -463,9 +460,9 @@ def plot_gmfcs_breakdown(df: pd.DataFrame) -> None:
             ha="center", va="bottom", fontsize=9,
         )
 
-    ax.set_xlabel("GMFCS-nivå")
-    ax.set_ylabel("Andel med intensivträning (%)")
-    ax.set_title("Deltagande i intensivträning per GMFCS-nivå", fontsize=12, fontweight="bold")
+    ax.set_xlabel("GMFCS level")
+    ax.set_ylabel("Participation in intensive therapy (%)")
+    ax.set_title("Participation in intensive therapy by GMFCS level", fontsize=12, fontweight="bold")
     ax.set_ylim(0, 110)
     ax.set_xticks(sorted(gmfcs_df["gmfcs_int"].astype(int).tolist()))
     ax.grid(axis="y", alpha=0.3)
