@@ -100,6 +100,7 @@ INCLUDE_IDS = [
         "7e68f3b3-509b-4352-8eb1-400c9407ac9b",
         "4be3b41c-a0b4-4e7b-ae49-896b37ea2052",
         "52dac13b-a335-449d-a7db-a58e40b5e213",
+        "ee9e6fc1-a9d3-4f45-aa0e-01723ebb2930",
 ]
 # Features used to analyze residuals
 TRAINING_FEATURES = [
