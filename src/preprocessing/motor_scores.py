@@ -12,6 +12,7 @@ from src.preprocessing.motor_development import (
     count_impairments,
 )
 
+
 # ════════════════════════════════════════════════════════════════════════════
 # Lookup tables
 # ════════════════════════════════════════════════════════════════════════════
@@ -41,10 +42,10 @@ POSSIBLE_MILESTONES_BY_AGE_GMFCS: dict[int, dict[int, int]] = {
 }
 
 # POSSIBLE_MILESTONES_BY_AGE_GMFCS: dict[int, dict[int, int]] = {
-#     1: {1: 35, 2: 35, 3:  35, 4:  35, 5:  35},  # pre-walking: small gap between levels
-#     2: {1: 35, 2: 35, 3: 35, 4:  35, 5:  35},  # IV/V gain only fine motor; III walks but can't run
-#     3: {1: 35, 2: 35, 3: 35, 4: 35, 5:  35},  # III plateaus (no running/jumping); IV/V fine motor only
-#     4: {1: 35, 2: 35, 3: 35, 4: 35, 5:  35},  # I/II gain advanced milestones; IV/V max ~3 gross + 9 fine
+#     1: {1: 12, 2: 11, 3:  9, 4:  7, 5:  4},  # pre-walking: small gap between levels
+#     2: {1: 19, 2: 17, 3: 13, 4:  9, 5:  5},  # IV/V gain only fine motor; III walks but can't run
+#     3: {1: 27, 2: 23, 3: 16, 4: 11, 5:  6},  # III plateaus (no running/jumping); IV/V fine motor only
+#     4: {1: 35, 2: 29, 3: 18, 4: 12, 5:  7},  # I/II gain advanced milestones; IV/V max ~3 gross + 9 fine
 # }
 
 N_NAMED_BY_AGE_GMFCS: dict[int, dict[int, int]] = {
@@ -72,10 +73,10 @@ N_NAMED_BY_AGE_GMFCS: dict[int, dict[int, int]] = {
 }
 
 # N_NAMED_BY_AGE_GMFCS: dict[int, dict[int, int]] = {
-#     1: {1: 18, 2: 18, 3: 18, 4: 18, 5:  18},  # no walking yet; 3 gait signs + 6 upper for I/II
-#     2: {1: 18, 2: 18, 3: 18, 4: 18, 5:  18},  # I/II: 6 gait + 10 upper; IV/V: 0 gait + 11/7 upper
-#     3: {1: 18, 2: 18, 3: 18, 4: 18, 5:  18},  # I/II: all 7 gait + 10 upper; III: 5 gait + 10 upper
-#     4: {1: 18, 2: 18, 3: 18, 4: 18, 5:  18},  # I/II: 7 gait + 11 upper = 18; IV/V: 0 gait + 11/8 upper
+#     1: {1:  9, 2:  9, 3:  8, 4:  7, 5:  5},  # no walking yet; 3 gait signs + 6 upper for I/II
+#     2: {1: 16, 2: 16, 3: 14, 4: 11, 5:  7},  # I/II: 6 gait + 10 upper; IV/V: 0 gait + 11/7 upper
+#     3: {1: 17, 2: 17, 3: 15, 4: 11, 5:  8},  # I/II: all 7 gait + 10 upper; III: 5 gait + 10 upper
+#     4: {1: 18, 2: 18, 3: 16, 4: 11, 5:  8},  # I/II: 7 gait + 11 upper = 18; IV/V: 0 gait + 11/8 upper
 # }
 
 _GMFCS_STR_TO_INT: dict[str, int] = {
