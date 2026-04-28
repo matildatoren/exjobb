@@ -228,6 +228,7 @@ def _build_motor_table(motorical_dev: pl.DataFrame, introductory: pl.DataFrame) 
         .select([
             "introductory_id", "age",
             pl.col("milestone_score").alias("milestone_score_setvalue"),
+            pl.col("cum_unique_milestones"),  # ADD THIS
         ])
     )
  
