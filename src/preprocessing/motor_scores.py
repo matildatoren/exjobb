@@ -35,18 +35,18 @@ POSSIBLE_MILESTONES_BY_AGE_GMFCS: dict[int, dict[int, int]] = {
     # │ GMFCS II  : gross motor 17–21 reduced (hops, skips, 2-wheel bike hard) │
     # └─────────────────────────────────────────────────────────────────────────┘
     #        I    II   III   IV    V
-    1: {1: 12, 2: 12, 3:  12, 4:  12, 5:  10},  # pre-walking: small gap between levels
-    2: {1: 20, 2: 20, 3: 18, 4:  15, 5:  13},  # IV/V gain only fine motor; III walks but can't run
-    3: {1: 28, 2: 28, 3: 23, 4: 20, 5:  16},  # III plateaus (no running/jumping); IV/V fine motor only
-    4: {1: 41, 2: 37, 3: 29, 4: 26, 5:  18},  # I/II gain advanced milestones; IV/V max ~3 gross + 9 fine
-}
-
-# POSSIBLE_MILESTONES_BY_AGE_GMFCS: dict[int, dict[int, int]] = {
-#     1: {1: 12, 2: 11, 3:  9, 4:  7, 5:  4},  # pre-walking: small gap between levels
-#     2: {1: 19, 2: 17, 3: 13, 4:  9, 5:  5},  # IV/V gain only fine motor; III walks but can't run
-#     3: {1: 27, 2: 23, 3: 16, 4: 11, 5:  6},  # III plateaus (no running/jumping); IV/V fine motor only
-#     4: {1: 35, 2: 29, 3: 18, 4: 12, 5:  7},  # I/II gain advanced milestones; IV/V max ~3 gross + 9 fine
+#     1: {1: 12, 2: 12, 3:  12, 4:  12, 5:  10},  # pre-walking: small gap between levels
+#     2: {1: 20, 2: 20, 3: 18, 4:  15, 5:  13},  # IV/V gain only fine motor; III walks but can't run
+#     3: {1: 28, 2: 28, 3: 23, 4: 20, 5:  16},  # III plateaus (no running/jumping); IV/V fine motor only
+#     4: {1: 41, 2: 37, 3: 29, 4: 26, 5:  18},  # I/II gain advanced milestones; IV/V max ~3 gross + 9 fine
 # }
+
+#POSSIBLE_MILESTONES_BY_AGE_GMFCS: dict[int, dict[int, int]] = {
+    1: {1: 12, 2: 11, 3:  9, 4:  7, 5:  4},  # pre-walking: small gap between levels
+    2: {1: 19, 2: 17, 3: 13, 4:  9, 5:  5},  # IV/V gain only fine motor; III walks but can't run
+    3: {1: 27, 2: 23, 3: 16, 4: 11, 5:  6},  # III plateaus (no running/jumping); IV/V fine motor only
+    4: {1: 35, 2: 29, 3: 18, 4: 12, 5:  7},  # I/II gain advanced milestones; IV/V max ~3 gross + 9 fine
+}
 
 N_NAMED_BY_AGE_GMFCS: dict[int, dict[int, int]] = {
     # ┌─────────────────────────────────────────────────────────────────────────┐
