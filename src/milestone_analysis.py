@@ -52,15 +52,25 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # ════════════════════════════════════════════════════════════════════════════
 
 # Score threshold above which a child is considered to have achieved the milestone
-MILESTONE_THRESHOLD = 0.7
+MILESTONE_THRESHOLD = 10
+
+from src.preprocessing.motor_development import extract_milestone_keys
+
+TARGET_MILESTONES = {
+    "Takes first independent steps and crawls efficiently.",
+    # Add Swedish variants here if needed:
+    "går",
+    "hon gjorde nästan allt",
+    "nästan allt",
+}
 
 # GMFCS-based normative expected achievement age (age bucket units, not years).
 # Replace with values from clinical literature relevant to your milestone.
 GMFCS_EXPECTED_AGE: dict[int, float | None] = {
-    1: 1.0,
-    2: 1.5,
-    3: 2.5,
-    4: 3.5,
+    1: 2.0,
+    2: 3.0,
+    3: 3.0,
+    4: None,
     5: None,  # not expected to achieve independently
 }
 
@@ -104,18 +114,18 @@ INCLUDE_IDS = [
 ]
 # Features used to analyze residuals
 TRAINING_FEATURES = [
-    #"total_home_training_hours",
-    #"neurohab_hours",
-    #"has_any_medical_device"
-    #"total_other_training_hours",
-    #"active_total_hours",
-    "cat_neurodevelopmental_reflex",
-    "cat_motor_learning_task",
-    "cat_technology_assisted",
-    #"cat_suit_based",
-    "cat_physical_conditioning",
-    "cat_complementary"
-    "cat_unclassified"
+    # "total_home_training_hours",
+    # "neurohab_hours",
+    # #"has_any_medical_device"
+    # "total_other_training_hours",
+     "active_total_hours",
+    # "cat_neurodevelopmental_reflex",
+    # "cat_motor_learning_task",
+    # "cat_technology_assisted",
+    # #"cat_suit_based",
+    # "cat_physical_conditioning",
+    # "cat_complementary"
+    # "cat_unclassified"
     ]
 
 
@@ -145,33 +155,63 @@ def filter_ids(master: pl.DataFrame) -> pl.DataFrame:
           + (f"  (included: {INCLUDE_IDS})" if INCLUDE_IDS else " (all children included)"))
     return master
 
+def build_milestone_events(data: dict) -> pl.DataFrame:
+    """
+    For each child, find the first age bucket at which a TARGET_MILESTONE
+    key appears in their gross or fine motor development entries.
+    Returns a DataFrame with introductory_id, age_achieved, event columns.
+    """
+    motorical_dev = data["motorical_development"]
 
-def build_survival_df(
-    master: pl.DataFrame,
-    threshold: float = MILESTONE_THRESHOLD,
-) -> pd.DataFrame:
-    """
-    For each child, find the first age bucket at which milestone_score >= threshold.
-    Children who never cross it are censored (event=0) at their last observed age.
-    Baseline covariates are taken from age bucket 1 to avoid data leakage.
-    """
-    # First age at which threshold is crossed
-    achieved = (
-        master
-        .filter(pl.col("milestone_score") >= threshold)
+    rows = []
+    for row in motorical_dev.iter_rows(named=True):
+        keys = (
+            extract_milestone_keys(row["gross_motor_development"])
+            | extract_milestone_keys(row["fine_motor_development"])
+        )
+        if keys & TARGET_MILESTONES:
+            rows.append({
+                "introductory_id": row["introductory_id"],
+                "age": row["age"],
+            })
+
+    if not rows:
+        print("WARNING: No children matched the target milestone keys.")
+        return pl.DataFrame(schema={
+            "introductory_id": pl.Utf8,
+            "age_achieved": pl.Int32,
+            "event": pl.Int32,
+        })
+
+    return (
+        pl.DataFrame(rows)
         .group_by("introductory_id")
         .agg(pl.col("age").min().alias("age_achieved"))
         .with_columns(pl.lit(1).cast(pl.Int32).alias("event"))
     )
 
-    # Last observed age (for censored children)
+
+def build_survival_df(
+    master: pl.DataFrame,
+    data: dict,
+) -> pd.DataFrame:
+    """
+    For each child, find the first age bucket at which a TARGET_MILESTONE
+    was recorded. Children who never achieve it are right-censored at
+    their last observed age bucket.
+    Baseline covariates are taken from age bucket 1 to avoid data leakage.
+    """
+    # Achievement events from raw milestone keys
+    achieved = build_milestone_events(data)
+
+    # Last observed age for censoring
     last_obs = (
         master
         .group_by("introductory_id")
         .agg(pl.col("age").max().alias("last_age"))
     )
 
-    # Combine: achieved children get their achievement age, others get last_age
+    # Combine
     survival = (
         last_obs
         .join(achieved, on="introductory_id", how="left")
@@ -195,7 +235,6 @@ def build_survival_df(
 
     df = survival.join(baseline, on="introductory_id", how="left").to_pandas()
     return df
-
 
 # ════════════════════════════════════════════════════════════════════════════
 # STEP 2 — Predicted achievement age
@@ -557,19 +596,39 @@ def run_logistic(df: pd.DataFrame) -> None:
 def main() -> None:
     print("Loading data...")
     conn = get_connection()
-    data = load_data(conn)
+    data = load_data(conn)                          # keep reference to raw data
     master = build_master_feature_table(data)
     print(f"Master table: {master.shape[0]} rows × {master.shape[1]} columns")
 
     print("\nApplying ID filter...")
     master = filter_ids(master)
 
+    # Also filter raw data to same IDs
+    if INCLUDE_IDS is not None:
+        data["motorical_development"] = data["motorical_development"].filter(
+            pl.col("introductory_id").is_in(INCLUDE_IDS)
+        )
+    
+    # Restrict to GMFCS levels where the milestone is achievable
+    GMFCS_INCLUDE = [1, 2, 3]
+    master = master.filter(pl.col("gmfcs_int").is_in(GMFCS_INCLUDE))
+    data["motorical_development"] = data["motorical_development"].filter(
+        pl.col("introductory_id").is_in(
+            master["introductory_id"].unique()
+        )
+    )
+    print(f"After GMFCS filter: {master['introductory_id'].n_unique()} children")
+
     print("\nBuilding survival dataset...")
-    df_surv = build_survival_df(master)
+    df_surv = build_survival_df(master, data)      # pass data here
     print(f"  {len(df_surv)} children  |  "
           f"  {df_surv['event'].sum()} achieved milestone  |  "
           f"  {(df_surv['event'] == 0).sum()} censored")
 
+    # ── rest of main stays exactly the same ──
+    df = add_gmfcs_prediction(df_surv)
+    df = add_residuals(df)
+    # ... etc
     # ── Choose prediction method ─────────────────────────────────────────────
     # Option A: normative GMFCS-based prediction (recommended if you have norms)
     df = add_gmfcs_prediction(df_surv)
@@ -581,6 +640,21 @@ def main() -> None:
     print(df["residual"].describe().round(2))
     print(f"  Earlier than predicted: {df['achieved_early'].sum()} children")
     print(f"  Later than predicted:   {(df['achieved_early'] == 0).sum()} children")
+    print(master.group_by("age").agg(
+        pl.col("cum_unique_milestones").median().alias("median"),
+        pl.col("cum_unique_milestones").mean().alias("mean"),
+        pl.col("cum_unique_milestones").min().alias("min"),
+        pl.col("cum_unique_milestones").max().alias("max"),
+    ))
+    print(
+        df_surv.groupby("gmfcs_int")
+        .agg({"event": ["sum", "count"]})
+    )
+    # Diagnostic: print empirical achievement ages by GMFCS level
+    achieved_df = df_surv[df_surv["event"] == 1][["introductory_id", "duration"]]
+    gmfcs_df = master.select(["introductory_id", "gmfcs_int"]).unique().to_pandas()
+    merged = achieved_df.merge(gmfcs_df, on="introductory_id", how="left")
+    print(merged.groupby("gmfcs_int")["duration"].describe())
 
     print("\nPlotting Kaplan-Meier curves...")
     plot_kaplan_meier(df_surv)
