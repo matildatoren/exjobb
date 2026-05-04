@@ -79,6 +79,7 @@ FILTER_INTRODUCTORY_IDS: list[str] = [
         "42475b28-2dfd-4114-ac53-d8619881dd2f",
         "52dac13b-a335-449d-a7db-a58e40b5e213",
         "ee9e6fc1-a9d3-4f45-aa0e-01723ebb2930",
+        "4c89ca0a-f5c3-4b7b-96be-a7919c679303",
         ]
 
 # Feature sets to test — comment/uncomment as needed
