@@ -11,6 +11,15 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.manifold import TSNE
 import umap
 
+plt.rcParams.update({
+    "font.size":        13,
+    "axes.titlesize":   16,
+    "axes.labelsize":   14,
+    "xtick.labelsize":  12,
+    "ytick.labelsize":  12,
+    "legend.fontsize":  12,
+})
+
 FIGURES_DIR = Path(__file__).resolve().parents[2] / "outputs" / "tsne_umap"
 FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -177,7 +186,7 @@ def _add_gmfcs_legend(ax):
         Patch(facecolor=color, label=f"GMFCS {lvl}")
         for lvl, color in GMFCS_COLORS.items()
     ]
-    ax.legend(handles=legend_elements, fontsize=7, loc="lower right")
+    ax.legend(handles=legend_elements, loc="lower right")
 
 
 def _add_cluster_legend(ax, n_clusters):
@@ -185,7 +194,7 @@ def _add_cluster_legend(ax, n_clusters):
         Patch(facecolor=CLUSTER_COLORS[k], label=f"Cluster {k+1}")
         for k in range(n_clusters)
     ]
-    ax.legend(handles=legend_elements, fontsize=7, loc="lower right")
+    ax.legend(handles=legend_elements, loc="lower right")
 
 
 def _scatter_panel(ax, X_2d, ids, gmfcs, title, xlabel, ylabel, cluster_labels=None, n_clusters=2):
@@ -322,9 +331,9 @@ def run_tsne_umap(
                        xlabel="Dim 1", ylabel="Dim 2",
                        cluster_labels=cl, n_clusters=n_clusters)
 
-    plt.suptitle(suptitle, fontsize=13)
+    plt.suptitle(suptitle, fontsize=18)
     plt.tight_layout()
-    plt.savefig(FIGURES_DIR / filename, dpi=150)
+    plt.savefig(FIGURES_DIR / filename, dpi=300, bbox_inches="tight")
     print(f"  Saved: {filename}")
     plt.close()
 

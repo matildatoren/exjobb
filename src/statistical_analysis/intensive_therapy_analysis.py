@@ -25,6 +25,15 @@ import pandas as pd
 import polars as pl
 from scipy import stats
 
+plt.rcParams.update({
+    "font.size":        13,
+    "axes.titlesize":   16,
+    "axes.labelsize":   14,
+    "xtick.labelsize":  12,
+    "ytick.labelsize":  12,
+    "legend.fontsize":  12,
+})
+
 ROOT = Path(__file__).resolve().parent
 sys.path.append(str(ROOT / "src"))
 
@@ -284,7 +293,6 @@ def plot_boxplots(df: pd.DataFrame) -> None:
     score_pairs = [
         ("milestone_score_setvalue",  "Milestone score\n(normalized)"),
         ("impairment_score_setvalue", "Impairment score\n(normalized)"),
-        ("combined_score_setvalue",   "Combined score\n(normalized)"),
     ]
     score_pairs = [(c, l) for c, l in score_pairs if c in df.columns]
 
@@ -312,7 +320,7 @@ def plot_boxplots(df: pd.DataFrame) -> None:
             f"No\n(n={len(data_no)})",
             f"Yes\n(n={len(data_yes)})",
         ])
-        ax.set_title(label, fontsize=10)
+        ax.set_title(label)
         ax.set_xlabel("Intensive therapy")
 
         # annotate mean diff
@@ -327,9 +335,9 @@ def plot_boxplots(df: pd.DataFrame) -> None:
         )
 
     axes[0].set_ylabel("Score")
-    fig.suptitle("Motor scores: Intensive therapy Yes vs No", fontsize=13, fontweight="bold")
+    fig.suptitle("Motor Scores: Intensive Therapy Yes vs No", fontsize=18, fontweight="bold")
     plt.tight_layout()
-    plt.savefig(FIGURES_DIR / "intensive_therapy_boxplots.png", dpi=150)
+    plt.savefig(FIGURES_DIR / "intensive_therapy_boxplots.png", dpi=300, bbox_inches="tight")
     print("  → Sparad: intensive_therapy_boxplots.png")
 
 
@@ -340,7 +348,6 @@ def plot_score_by_age(df: pd.DataFrame) -> None:
     score_pairs = [
         ("milestone_score_setvalue",  "Milestone score (normalized)"),
         ("impairment_score_setvalue", "Impairment score (normalized)"),
-        ("combined_score_setvalue",   "Combined score (normalized)"),
     ]
     score_pairs = [(c, l) for c, l in score_pairs if c in df.columns]
 
@@ -377,19 +384,19 @@ def plot_score_by_age(df: pd.DataFrame) -> None:
                 color=COLORS[group_name], alpha=0.15,
             )
 
-        ax.set_title(label, fontsize=10)
+        ax.set_title(label)
         ax.set_xlabel("Age (years)")
         ax.set_ylabel("Mean score (±SE)")
         ax.set_xticks(ages)
-        ax.legend(fontsize=8)
+        ax.legend()
         ax.grid(axis="y", alpha=0.3)
 
     for j in range(len(score_pairs), 4):
         axes[j].set_visible(False)
 
-    fig.suptitle("Motor scores by age — Intensive therapy Yes vs No", fontsize=13, fontweight="bold")
+    fig.suptitle("Motor Scores by Age — Intensive Therapy Yes vs No", fontsize=18, fontweight="bold")
     plt.tight_layout()
-    plt.savefig(FIGURES_DIR / "intensive_therapy_by_age.png", dpi=150)
+    plt.savefig(FIGURES_DIR / "intensive_therapy_by_age.png", dpi=300, bbox_inches="tight")
     print("  → Sparad: intensive_therapy_by_age.png")
 
 
@@ -421,12 +428,12 @@ def plot_participation_rate(df: pd.DataFrame) -> None:
 
     ax.set_xlabel("Age (years)")
     ax.set_ylabel("Participation in intensive therapy (%)")
-    ax.set_title("Participation in intensive therapy by age group", fontsize=12, fontweight="bold")
+    ax.set_title("Participation in Intensive Therapy by Age Group", fontsize=16, fontweight="bold")
     ax.set_ylim(0, 110)
     ax.set_xticks(age_rates["age"])
     ax.grid(axis="y", alpha=0.3)
     plt.tight_layout()
-    plt.savefig(FIGURES_DIR/ "intensive_therapy_participation_rate.png", dpi=150)
+    plt.savefig(FIGURES_DIR / "intensive_therapy_participation_rate.png", dpi=300, bbox_inches="tight")
     print("  → Sparad: intensive_therapy_participation_rate.png")
 
 
@@ -462,12 +469,12 @@ def plot_gmfcs_breakdown(df: pd.DataFrame) -> None:
 
     ax.set_xlabel("GMFCS level")
     ax.set_ylabel("Participation in intensive therapy (%)")
-    ax.set_title("Participation in intensive therapy by GMFCS level", fontsize=12, fontweight="bold")
+    ax.set_title("Participation in Intensive Therapy by GMFCS Level", fontsize=16, fontweight="bold")
     ax.set_ylim(0, 110)
     ax.set_xticks(sorted(gmfcs_df["gmfcs_int"].astype(int).tolist()))
     ax.grid(axis="y", alpha=0.3)
     plt.tight_layout()
-    plt.savefig(FIGURES_DIR / "intensive_therapy_by_gmfcs.png", dpi=150)
+    plt.savefig(FIGURES_DIR / "intensive_therapy_by_gmfcs.png", dpi=300, bbox_inches="tight")
     print("  → Sparad: intensive_therapy_by_gmfcs.png")
 
 

@@ -28,6 +28,28 @@ import polars as pl
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+plt.rcParams.update({
+    "font.size":        13,
+    "axes.titlesize":   16,
+    "axes.labelsize":   14,
+    "xtick.labelsize":  12,
+    "ytick.labelsize":  12,
+    "legend.fontsize":  12,
+})
+
+FEATURE_LABELS = {
+    "active_total_hours":              "Active Training Hours",
+    "total_home_training_hours":       "Home Training Hours",
+    "neurohab_hours":                  "Intensive Therapy Hours",
+    "total_other_training_hours":      "Other Training Hours",
+    "cat_neurodevelopmental_reflex":   "Neurodevelopmental / Reflex Therapy",
+    "cat_motor_learning_task":         "Motor Learning / Task-oriented Therapy",
+    "cat_technology_assisted":         "Technology-assisted Therapy",
+    "cat_physical_conditioning":       "Physical Conditioning",
+    "cat_complementary":               "Complementary Therapy",
+    "cat_unclassified":                "Unclassified Therapy",
+}
+
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.linear_model import LogisticRegression, RidgeCV
 from sklearn.model_selection import cross_val_predict, cross_val_score
@@ -112,6 +134,7 @@ INCLUDE_IDS = [
         "52dac13b-a335-449d-a7db-a58e40b5e213",
         "ee9e6fc1-a9d3-4f45-aa0e-01723ebb2930",
         "4c89ca0a-f5c3-4b7b-96be-a7919c679303",
+        "fcdc7e60-1c2f-4178-bafd-db1d42e869ee",
 ]
 # Features used to analyze residuals
 TRAINING_FEATURES = [
@@ -300,10 +323,10 @@ def plot_kaplan_meier(df: pd.DataFrame) -> None:
         kmf.fit(df.loc[mask, "duration"], df.loc[mask, "event"],
                 label=f"GMFCS {int(level)} (n={mask.sum()})")
         kmf.plot_survival_function(ax=ax)
-    ax.set_title("Time to milestone achievement\nby GMFCS level")
+    ax.set_title("Time to Milestone Achievement\nby GMFCS Level")
     ax.set_xlabel("Age bucket")
     ax.set_ylabel("Proportion not yet achieved")
-    ax.legend(fontsize=8)
+    ax.legend()
 
     # — By active_total_hours, median split WITHIN each GMFCS stratum
     ax = axes[1]
@@ -323,14 +346,14 @@ def plot_kaplan_meier(df: pd.DataFrame) -> None:
             kmf = KaplanMeierFitter()
             kmf.fit(df.loc[mask, "duration"], df.loc[mask, "event"], label=f"{label} (n={mask.sum()})")
             kmf.plot_survival_function(ax=ax)
-        ax.set_title("Time to milestone achievement\nby total training hours\n(median split within GMFCS stratum)")
+        ax.set_title("Time to Milestone Achievement\nby Total Training Hours\n(median split within GMFCS stratum)")
         ax.set_xlabel("Age bucket")
         ax.set_ylabel("Proportion not yet achieved")
-        ax.legend(fontsize=8)
+        ax.legend()
 
     plt.tight_layout()
     out = OUTPUT_DIR / "kaplan_meier.png"
-    plt.savefig(out, dpi=150)
+    plt.savefig(out, dpi=300, bbox_inches="tight")
     plt.close()
     print(f"Saved: {out}")
 
@@ -351,12 +374,12 @@ def plot_additional_analysis(df: pd.DataFrame) -> None:
 
     ax.set_xlabel("Predicted age")
     ax.set_ylabel("Observed age")
-    ax.set_title("Observed vs Predicted milestone age")
+    ax.set_title("Observed vs Predicted Milestone Age")
     ax.legend()
 
     plt.tight_layout()
     out = OUTPUT_DIR / "observed_vs_predicted.png"
-    plt.savefig(out, dpi=150)
+    plt.savefig(out, dpi=300, bbox_inches="tight")
     plt.close()
     print(f"Saved: {out}")
 
@@ -375,13 +398,13 @@ def plot_additional_analysis(df: pd.DataFrame) -> None:
         )
 
         ax.axhline(0, linestyle="--", color="black")
-        ax.set_title("Training vs residual\n(negative = earlier than expected)")
-        ax.set_xlabel("Active training hours")
+        ax.set_title("Training vs Residual\n(negative = earlier than expected)")
+        ax.set_xlabel("Active Training Hours")
         ax.set_ylabel("Residual (actual − predicted)")
 
         plt.tight_layout()
         out = OUTPUT_DIR / "residual_vs_training.png"
-        plt.savefig(out, dpi=150)
+        plt.savefig(out, dpi=300, bbox_inches="tight")
         plt.close()
         print(f"Saved: {out}")
 
@@ -392,12 +415,12 @@ def plot_additional_analysis(df: pd.DataFrame) -> None:
 
         sns.histplot(df["active_total_hours"], bins=15, kde=True, ax=ax)
 
-        ax.set_title("Distribution of training hours")
-        ax.set_xlabel("Active training hours")
+        ax.set_title("Distribution of Training Hours")
+        ax.set_xlabel("Active Training Hours")
 
         plt.tight_layout()
         out = OUTPUT_DIR / "training_distribution.png"
-        plt.savefig(out, dpi=150)
+        plt.savefig(out, dpi=300, bbox_inches="tight")
         plt.close()
         print(f"Saved: {out}")
 
@@ -408,13 +431,13 @@ def plot_additional_analysis(df: pd.DataFrame) -> None:
 
         sns.boxplot(x="gmfcs_int", y="duration", data=df, ax=ax)
 
-        ax.set_title("Milestone age by GMFCS level")
-        ax.set_xlabel("GMFCS level")
+        ax.set_title("Milestone Age by GMFCS Level")
+        ax.set_xlabel("GMFCS Level")
         ax.set_ylabel("Age at milestone")
 
         plt.tight_layout()
         out = OUTPUT_DIR / "gmfcs_vs_duration.png"
-        plt.savefig(out, dpi=150)
+        plt.savefig(out, dpi=300, bbox_inches="tight")
         plt.close()
         print(f"Saved: {out}")
 
@@ -479,7 +502,7 @@ def plot_residuals(df: pd.DataFrame) -> None:
     ax.set_xlabel("Pearson correlation")
     plt.tight_layout()
     out = OUTPUT_DIR / "residual_correlations.png"
-    plt.savefig(out, dpi=150)
+    plt.savefig(out, dpi=300, bbox_inches="tight")
     plt.close()
     print(f"Saved: {out}")
 
@@ -490,7 +513,7 @@ def plot_residuals(df: pd.DataFrame) -> None:
     df["residual"].plot(kind="hist", bins=20, ax=ax, edgecolor="black", color="#3498db")
     ax.axvline(0, color="red", linestyle="--", linewidth=1.5, label="On time")
     ax.set_xlabel("Actual age − Predicted age (age buckets)")
-    ax.set_title("Distribution of residuals")
+    ax.set_title("Distribution of Residuals")
     ax.legend()
 
     # ── use first available training feature instead of hardcoded name ───────
@@ -502,13 +525,14 @@ def plot_residuals(df: pd.DataFrame) -> None:
                    medianprops=dict(color="#e74c3c"))
         ax.set_xticklabels(["Later than predicted\n(residual ≥ 0)",
                              "Earlier than predicted\n(residual < 0)"])
-        ax.set_title(f"{col} by achievement group")
+        col_label = FEATURE_LABELS.get(col, col.replace("_", " ").title())
+        ax.set_title(f"{col_label} by Achievement Group")
         ax.set_xlabel("")
         plt.suptitle("")
 
     plt.tight_layout()
     out = OUTPUT_DIR / "early_vs_late.png"
-    plt.savefig(out, dpi=150)
+    plt.savefig(out, dpi=300, bbox_inches="tight")
     plt.close()
     print(f"Saved: {out}")
 

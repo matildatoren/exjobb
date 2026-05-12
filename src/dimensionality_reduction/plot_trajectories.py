@@ -18,6 +18,15 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+plt.rcParams.update({
+    "font.size":        13,
+    "axes.titlesize":   14,
+    "axes.labelsize":   13,
+    "xtick.labelsize":  11,
+    "ytick.labelsize":  11,
+    "legend.fontsize":  11,
+})
+
 SRC = Path(__file__).resolve().parent / "src"
 sys.path.append(str(SRC))
 
@@ -75,8 +84,9 @@ GROUP_C = [
 
 # ────────────────────────────────────────────────────────────────────────────
 
-SCORE_COL = "delta_combined_score"
-GMFCS_COL = "gmfcs_int"
+SCORE_COL   = "delta_combined_score"
+SCORE_LABEL = "Δ Combined Score"
+GMFCS_COL   = "gmfcs_int"
 
 # Border colors used in combined plot to distinguish groups
 COLOR_A = "#2948b9"   # blue
@@ -173,9 +183,9 @@ def _draw_panel(ax, pid, group, all_ages, y_min, y_max,
 
     ax.axhline(0, color="lightgray", linewidth=0.8, linestyle=":")
     ax.set_xticks(all_ages)
-    ax.set_xticklabels([f"Year {a}" for a in all_ages], fontsize=8)
+    ax.set_xticklabels([f"Year {a}" for a in all_ages])
     ax.set_ylim(y_min, y_max)
-    ax.set_ylabel(SCORE_COL.replace("_", " ").title(), fontsize=8)
+    ax.set_ylabel(SCORE_LABEL)
 
     if border_color:
         for spine in ax.spines.values():
@@ -187,7 +197,7 @@ def _draw_panel(ax, pid, group, all_ages, y_min, y_max,
         ax.spines["right"].set_visible(False)
 
     if title:
-        ax.set_title(title, fontsize=9)
+        ax.set_title(title)
 
 
 def _gmfcs_legend_elements(df: pd.DataFrame) -> list:
@@ -229,7 +239,7 @@ def plot_individual_trajectories(
         color = GMFCS_COLORS.get(int(gmfcs), "#555555") if pd.notna(gmfcs) else "#555555"
         gmfcs_label = f"  GMFCS {int(gmfcs)}" if pd.notna(gmfcs) else ""
         _draw_panel(ax, pid, group, all_ages, y_min, y_max,
-                    line_color=color, title=f"{pid[:8]}…{gmfcs_label}")
+                    line_color=color, title=gmfcs_label.strip())
 
     for j in range(n, n_rows * n_cols):
         axes[j // n_cols][j % n_cols].set_visible(False)
@@ -237,15 +247,15 @@ def plot_individual_trajectories(
     legend_elements = _gmfcs_legend_elements(df)
     if legend_elements:
         fig.legend(handles=legend_elements, loc="lower center",
-                   ncol=len(legend_elements), fontsize=10,
+                   ncol=len(legend_elements),
                    title="GMFCS level", bbox_to_anchor=(0.5, 0))
         plt.subplots_adjust(bottom=0.08)
 
     fig.suptitle(f"Individual Trajectories — {group_label}  (n={n})",
-                 fontsize=14, y=1.01)
+                 fontsize=18, y=1.01)
     plt.tight_layout()
     path = FIGURES_DIR / filename
-    plt.savefig(path, dpi=150, bbox_inches="tight")
+    plt.savefig(path, dpi=300, bbox_inches="tight")
     print(f"  Saved: {path.name}")
     plt.show()
 
@@ -292,7 +302,7 @@ def plot_combined_groups(
             ax, pid, group, all_ages, y_min, y_max,
             line_color=color,
             border_color=border_map.get(pid),
-            title=f"{tag} {pid[:8]}…{gmfcs_label}"
+            title=f"{tag} {gmfcs_label.strip()}".strip()
         )
 
     for j in range(n, n_rows * n_cols):
@@ -308,18 +318,17 @@ def plot_combined_groups(
         handles=gmfcs_elements + group_elements,
         loc="lower center",
         ncol=len(gmfcs_elements) + 2,
-        fontsize=9,
         bbox_to_anchor=(0.5, 0)
     )
     plt.subplots_adjust(bottom=0.06)
 
     fig.suptitle(
-        f"All Trajectories — {label_a} (blue) · {label_b} (orange)  (n={n})",
-        fontsize=13, y=1.01,
+        f"All Trajectories — {label_a} (blue) · {label_b} (red)  (n={n})",
+        fontsize=18, y=1.01,
     )
     plt.tight_layout()
     path = FIGURES_DIR / filename
-    plt.savefig(path, dpi=150, bbox_inches="tight")
+    plt.savefig(path, dpi=300, bbox_inches="tight")
     print(f"  Saved: {path.name}")
     plt.show()
 
@@ -369,17 +378,17 @@ def plot_group_averages(
 
     ax.axhline(0, color="lightgray", linewidth=0.8, linestyle=":")
     ax.set_xticks(all_ages)
-    ax.set_xticklabels([f"Year {a}" for a in all_ages], fontsize=11)
-    ax.set_ylabel(SCORE_COL.replace("_", " ").title(), fontsize=12)
+    ax.set_xticklabels([f"Year {a}" for a in all_ages])
+    ax.set_ylabel(SCORE_LABEL)
     ax.set_ylim(y_min, y_max)
-    ax.set_title(f"Group Average Trajectories: {label_a} · {label_b}", fontsize=13)
-    ax.legend(fontsize=9)
+    ax.set_title(f"Group Average Trajectories: {label_a} vs {label_b}", fontsize=16)
+    ax.legend()
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
 
     plt.tight_layout()
     path = FIGURES_DIR / filename
-    plt.savefig(path, dpi=150, bbox_inches="tight")
+    plt.savefig(path, dpi=300, bbox_inches="tight")
     print(f"  Saved: {path.name}")
     plt.show()
 

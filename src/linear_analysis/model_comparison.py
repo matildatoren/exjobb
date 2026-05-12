@@ -23,6 +23,15 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import shap
 
+plt.rcParams.update({
+    "font.size":        13,
+    "axes.titlesize":   16,
+    "axes.labelsize":   14,
+    "xtick.labelsize":  12,
+    "ytick.labelsize":  12,
+    "legend.fontsize":  12,
+})
+
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import cross_val_score, LeaveOneOut
@@ -70,7 +79,18 @@ FILTER_INTRODUCTORY_IDS = [
         "4c89ca0a-f5c3-4b7b-96be-a7919c679303",
 ]
 
-TARGET = "delta_milestone_score_setvalue"
+TARGET       = "delta_milestone_score_setvalue"
+TARGET_LABEL = "Δ Milestone Score"
+
+FEATURE_LABELS = {
+    "has_any_medical_treatment":      "Any Medical Treatment",
+    "log_total_home_training_hours":  "Home Training (log hours)",
+    "log_total_other_training_hours": "Other Training (log hours)",
+    "log_neurohab_hours":             "Intensive Therapy (log hours)",
+    "age":                            "Age",
+    "gmfcs_int":                      "GMFCS Level",
+}
+
 TRAINING_FEATURES = [
     #"age",
     #"gmfcs_int",
@@ -156,13 +176,13 @@ def plot_predicted_vs_actual(result: dict):
     ax.scatter(y, y_pred, alpha=0.6, color="steelblue", edgecolors="white", s=60)
     lims = [min(y.min(), y_pred.min()) - 0.05, max(y.max(), y_pred.max()) + 0.05]
     ax.plot(lims, lims, "k--", linewidth=1, label="Perfect fit")
-    ax.set_xlabel("Actual Δ milestone score (setvalue)")
-    ax.set_ylabel("Predicted Δ milestone score (setvalue)")
-    ax.set_title(f"{result['name']} — Predicted vs Actual\n(train R² = {result['train_r2']:.3f})")
+    ax.set_xlabel(f"Actual {TARGET_LABEL}")
+    ax.set_ylabel(f"Predicted {TARGET_LABEL}")
+    ax.set_title(f"{result['name']} — Predicted vs Actual\n(Train R² = {result['train_r2']:.3f})")
     ax.legend()
     plt.tight_layout()
     path = FIGURES_DIR / f"pred_vs_actual_{result['name'].replace(' ', '_')}.png"
-    plt.savefig(path, dpi=150)
+    plt.savefig(path, dpi=300, bbox_inches="tight")
     print(f"  Saved: {path.name}")
     plt.show()
 
@@ -183,7 +203,7 @@ def plot_feature_importance(result: dict):
     ax.set_xlabel("Importance")
     plt.tight_layout()
     path = FIGURES_DIR / f"feature_importance_{result['name'].replace(' ', '_')}.png"
-    plt.savefig(path, dpi=150)
+    plt.savefig(path, dpi=300, bbox_inches="tight")
     print(f"  Saved: {path.name}")
     plt.show()
 
@@ -202,10 +222,10 @@ def plot_shap(result: dict):
 
     plt.figure()
     shap.summary_plot(shap_values, X, plot_type="dot", max_display=10, show=False)
-    plt.title(f"{result['name']} — SHAP Beeswarm")
+    plt.title(f"{result['name']} — SHAP Beeswarm", fontsize=16)
     plt.tight_layout()
     path = FIGURES_DIR / f"shap_{result['name'].replace(' ', '_')}.png"
-    plt.savefig(path, dpi=150, bbox_inches="tight")
+    plt.savefig(path, dpi=300, bbox_inches="tight")
     print(f"  Saved: {path.name}")
     plt.show()
 
@@ -228,16 +248,17 @@ def plot_partial_dependence(result: dict):
             X_copy[col] = val
             preds.append(model.predict(X_copy).mean())
 
+        col_label = FEATURE_LABELS.get(col, col.replace("_", " ").title())
         ax.plot(grid, preds, color="darkorange", linewidth=2)
         ax.axhline(0, color="gray", linewidth=0.8, linestyle=":")
-        ax.set_xlabel(col)
-        ax.set_ylabel("Avg predicted Δ milestone score")
-        ax.set_title(col)
+        ax.set_xlabel(col_label)
+        ax.set_ylabel(f"Avg. Predicted {TARGET_LABEL}")
+        ax.set_title(col_label)
 
-    fig.suptitle(f"{result['name']} — Partial Dependence", fontsize=13)
+    fig.suptitle(f"{result['name']} — Partial Dependence", fontsize=18)
     plt.tight_layout()
     path = FIGURES_DIR / f"partial_dep_{result['name'].replace(' ', '_')}.png"
-    plt.savefig(path, dpi=150)
+    plt.savefig(path, dpi=300, bbox_inches="tight")
     print(f"  Saved: {path.name}")
     plt.show()
 

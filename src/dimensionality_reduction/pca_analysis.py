@@ -8,6 +8,15 @@ from pathlib import Path
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 
+plt.rcParams.update({
+    "font.size":        13,
+    "axes.titlesize":   16,
+    "axes.labelsize":   14,
+    "xtick.labelsize":  12,
+    "ytick.labelsize":  12,
+    "legend.fontsize":  12,
+})
+
 FIGURES_DIR = Path(__file__).resolve().parents[2] / "outputs" / "pca_analysis"
 FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -229,30 +238,28 @@ def run_pca(
         pc2_val = X_pca[i, 1] if n_components > 1 else 0
         ax.scatter(X_pca[i, 0], pc2_val, color="steelblue", s=100, zorder=3,
                    edgecolors="white", linewidths=0.5)
-        ax.annotate(str(child_id)[:8], (X_pca[i, 0], pc2_val),
-                    fontsize=7, ha="left", va="bottom", alpha=0.75)
 
     ax.axhline(0, color="gray", linewidth=0.6, linestyle=":")
     ax.axvline(0, color="gray", linewidth=0.6, linestyle=":")
-    ax.set_xlabel(f"PC1 ({explained[0]:.1f}% förklarad varians)")
-    ax.set_ylabel(f"PC2 ({explained[1]:.1f}% förklarad varians)" if n_components > 1 else "PC2")
+    ax.set_xlabel(f"PC1 ({explained[0]:.1f}% explained variance)")
+    ax.set_ylabel(f"PC2 ({explained[1]:.1f}% explained variance)" if n_components > 1 else "PC2")
     ax.set_title(title)
 
     # ── Panel 2: scree ───────────────────────────────────────────────────────
     ax2 = axes[1]
     ax2.bar(range(1, len(all_exp) + 1), all_exp,
-            color="steelblue", alpha=0.7, label="Per komponent")
+            color="steelblue", alpha=0.7, label="Per component")
     ax2.plot(range(1, len(cum_exp) + 1), cum_exp,
-             color="orange", marker="o", label="Kumulativ")
-    ax2.axhline(80, color="red", linewidth=0.8, linestyle="--", label="80%-gräns")
-    ax2.set_xlabel("Komponent")
-    ax2.set_ylabel("Förklarad varians (%)")
-    ax2.set_title("Scree plot")
+             color="orange", marker="o", label="Cumulative")
+    ax2.axhline(80, color="red", linewidth=0.8, linestyle="--", label="80% threshold")
+    ax2.set_xlabel("Component")
+    ax2.set_ylabel("Explained variance (%)")
+    ax2.set_title("Scree Plot")
     ax2.legend()
 
-    plt.suptitle(title, fontsize=13)
+    plt.suptitle(title, fontsize=18)
     plt.tight_layout()
-    plt.savefig(FIGURES_DIR / filename, dpi=150)
+    plt.savefig(FIGURES_DIR / filename, dpi=300, bbox_inches="tight")
     print(f"  Saved: {filename}")
     plt.close()
 

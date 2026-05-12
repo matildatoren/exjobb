@@ -4,6 +4,15 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from pathlib import Path
+
+plt.rcParams.update({
+    "font.size":        13,
+    "axes.titlesize":   16,
+    "axes.labelsize":   14,
+    "xtick.labelsize":  12,
+    "ytick.labelsize":  12,
+    "legend.fontsize":  12,
+})
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.pipeline import make_pipeline
@@ -121,6 +130,9 @@ def build_analysis_df(
     Returns a pandas DataFrame with:
       delta_score, hour components, active_total_hours, med_* columns.
     """
+    if delta_col not in master.columns:
+        raise ValueError(f"Column '{delta_col}' not found in master table — skipping.")
+
     overall = CONFIG["overall_feature"]
 
     keep = list(dict.fromkeys(
@@ -130,7 +142,7 @@ def build_analysis_df(
         + [c for c in master.columns if c.startswith("med_")]
     ))
 
-    keep = [c for c in keep if c in master.columns]   # guard against missing cols
+    keep = [c for c in keep if c in master.columns]
 
     df = (
         master
@@ -310,7 +322,7 @@ def plot_training_components(
     n_cols  = 2
     n_rows  = (n + n_cols - 1) // n_cols
 
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 5 * n_rows))
+    _, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 5 * n_rows))
     axes = axes.flatten()
 
     for i, r in enumerate(panels):
@@ -343,9 +355,10 @@ def plot_training_components(
     for j in range(len(panels), 4):
         axes[j].set_visible(False)
 
-    plt.suptitle(f"Motorscore improvement by Training-category — {title}", fontsize=16)
+    plt.suptitle(f"Motor Score Improvement by Training Category — {title}", fontsize=18)
     plt.tight_layout()
-    plt.savefig(FIGURES_DIR / filename, dpi=150)
+    plt.savefig(FIGURES_DIR / filename, dpi=300, bbox_inches="tight")
+    plt.close()
     print(f"Saved: {filename}")
 
 
@@ -362,7 +375,7 @@ def plot_treatment_effects(
         return
 
     n_cols = len(treatment_cols)
-    fig, axes = plt.subplots(1, n_cols, figsize=(5 * n_cols, 5), sharey=True)
+    _, axes = plt.subplots(1, n_cols, figsize=(5 * n_cols, 5), sharey=True)
     if n_cols == 1:
         axes = [axes]
 
@@ -393,9 +406,10 @@ def plot_treatment_effects(
         )
 
     axes[0].set_ylabel(f"Δ {title}", fontsize=13)
-    plt.suptitle(f"Score Change by Medical Treatment — {title}", fontsize=16)
+    plt.suptitle(f"Score Change by Medical Treatment — {title}", fontsize=18)
     plt.tight_layout()
-    plt.savefig(FIGURES_DIR / filename, dpi=150)
+    plt.savefig(FIGURES_DIR / filename, dpi=300, bbox_inches="tight")
+    plt.close()
     print(f"Saved: {filename}")
 
 
@@ -415,7 +429,7 @@ def plot_overall_dose_response(
     x_range    = np.linspace(X[feature].min(), X[feature].max(), 200).reshape(-1, 1)
     x_range_df = pd.DataFrame(x_range, columns=[feature])
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+    _, ax = plt.subplots(figsize=(10, 6))
     ax.scatter(X[feature], y, alpha=0.5, color="steelblue", s=30, label="Observed")
     ax.plot(
         x_range, linear_model.predict(x_range_df),
@@ -431,11 +445,10 @@ def plot_overall_dose_response(
     ax.axhline(0, color="gray", linewidth=0.8, linestyle=":")
     ax.set_xlabel("Total active hours / year", fontsize=13)
     ax.set_ylabel(f"Δ {title}", fontsize=13)
-    ax.set_title(f"Overall Dose-Response: Active Hours vs {title} Change", fontsize=15)
-    ax.tick_params(axis="both", labelsize=12)
-    ax.legend(fontsize=12)
+    ax.set_title(f"Overall Dose-Response: Active Hours vs {title} Change", fontsize=16)
+    ax.legend()
     plt.tight_layout()
-    plt.savefig(FIGURES_DIR / filename, dpi=150)
+    plt.savefig(FIGURES_DIR / filename, dpi=300, bbox_inches="tight")
     print(f"Saved: {filename}")
 
 
@@ -454,7 +467,11 @@ if __name__ == "__main__":
     master = build_master_feature_table(data)
 
     for key, cfg in CONFIG["scores"].items():
-        results = run_analysis(master, delta_col=cfg["delta_col"])
+        try:
+            results = run_analysis(master, delta_col=cfg["delta_col"])
+        except ValueError as e:
+            print(f"  Skipping '{key}': {e}")
+            continue
 
         print_summary(results, title=cfg["title"])
 

@@ -27,6 +27,15 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import shap
 
+plt.rcParams.update({
+    "font.size":        13,
+    "axes.titlesize":   16,
+    "axes.labelsize":   14,
+    "xtick.labelsize":  12,
+    "ytick.labelsize":  12,
+    "legend.fontsize":  12,
+})
+
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import cross_val_score, LeaveOneOut
 from sklearn.metrics import r2_score
@@ -47,7 +56,17 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # ════════════════════════════════════════════════════════════════════════════
 
 # Target variable (what the model predicts)
-TARGET = "delta_milestone_score_setvalue"
+TARGET       = "delta_milestone_score_setvalue"
+TARGET_LABEL = "Δ Milestone Score"
+
+FEATURE_LABELS = {
+    "log_total_home_training_hours":   "Home Training (log hours)",
+    "log_total_other_training_hours":  "Other Training (log hours)",
+    "log_neurohab_hours":              "Intensive Therapy (log hours)",
+    "has_any_medical_treatment":       "Any Medical Treatment",
+    "gmfcs_int":                       "GMFCS Level",
+    "active_total_hours":              "Active Training Hours",
+}
 
 # Input features (column names from the master feature table)
 INPUT_FEATURES: list[str] = [
@@ -189,39 +208,49 @@ def plot_pred_vs_actual(model: RandomForestRegressor, X: pd.DataFrame, y: pd.Ser
     ax.scatter(y, y_pred, alpha=0.65, color="steelblue", edgecolors="white", s=60)
     lims = [min(y.min(), y_pred.min()) - 0.05, max(y.max(), y_pred.max()) + 0.05]
     ax.plot(lims, lims, "k--", linewidth=1, label="Perfect fit")
-    ax.set_xlabel(f"Actual  {TARGET}")
-    ax.set_ylabel(f"Predicted  {TARGET}")
-    ax.set_title(f"Random Forest — Predicted vs Actual\n(train R² = {r2_score(y, y_pred):.3f})")
+    ax.set_xlabel(f"Actual {TARGET_LABEL}")
+    ax.set_ylabel(f"Predicted {TARGET_LABEL}")
+    ax.set_title(f"Random Forest — Predicted vs Actual\n(Train R² = {r2_score(y, y_pred):.3f})")
     ax.legend()
     plt.tight_layout()
     path = OUTPUT_DIR / "pred_vs_actual.png"
-    plt.savefig(path, dpi=150)
+    plt.savefig(path, dpi=300, bbox_inches="tight")
     plt.close()
     print(f"  Saved: pred_vs_actual.png")
 
 
 def plot_shap_beeswarm(shap_values: shap.Explanation, X: pd.DataFrame) -> None:
+    X_display = X.rename(columns=FEATURE_LABELS)
+    shap_display = shap.Explanation(
+        values=shap_values.values,
+        base_values=shap_values.base_values,
+        data=shap_values.data,
+        feature_names=[FEATURE_LABELS.get(n, n) for n in shap_values.feature_names],
+    )
     plt.figure()
-    shap.summary_plot(shap_values, X, plot_type="dot", max_display=20, show=False)
-    plt.title("Random Forest — SHAP Beeswarm")
+    shap.summary_plot(shap_display, X_display, plot_type="dot", max_display=20, show=False)
+    plt.title("Random Forest — SHAP Beeswarm", fontsize=16)
     plt.tight_layout()
     path = OUTPUT_DIR / "beeswarm.png"
-    plt.savefig(path, dpi=150, bbox_inches="tight")
+    plt.savefig(path, dpi=300, bbox_inches="tight")
     plt.close()
     print(f"  Saved: beeswarm.png")
 
 
 def plot_shap_feature_importance(shap_values: shap.Explanation) -> None:
     mean_abs = np.abs(shap_values.values).mean(axis=0)
-    importance = pd.Series(mean_abs, index=shap_values.feature_names).sort_values()
+    importance = pd.Series(
+        mean_abs,
+        index=[FEATURE_LABELS.get(n, n) for n in shap_values.feature_names],
+    ).sort_values()
 
-    fig, ax = plt.subplots(figsize=(7, max(3, len(importance) * 0.55)))
+    fig, ax = plt.subplots(figsize=(8, max(3, len(importance) * 0.6)))
     importance.plot(kind="barh", ax=ax, color="steelblue")
     ax.set_title("Random Forest — Mean |SHAP| Feature Importance")
     ax.set_xlabel("Mean |SHAP value|")
     plt.tight_layout()
     path = OUTPUT_DIR / "feature_importance.png"
-    plt.savefig(path, dpi=150)
+    plt.savefig(path, dpi=300, bbox_inches="tight")
     plt.close()
     print(f"  Saved: feature_importance.png")
 
@@ -232,14 +261,14 @@ def plot_waterfall_mean(shap_values: shap.Explanation) -> None:
         values=shap_values.values.mean(axis=0),
         base_values=shap_values.base_values.mean(),
         data=shap_values.data.mean(axis=0),
-        feature_names=shap_values.feature_names,
+        feature_names=[FEATURE_LABELS.get(n, n) for n in shap_values.feature_names],
     )
     plt.figure()
     shap.plots.waterfall(mean_explanation, max_display=20, show=False)
-    plt.title("Random Forest — SHAP Waterfall (mean over all samples)")
+    plt.title("Random Forest — SHAP Waterfall (mean over all samples)", fontsize=16)
     plt.tight_layout()
     path = OUTPUT_DIR / "waterfall_mean.png"
-    plt.savefig(path, dpi=150, bbox_inches="tight")
+    plt.savefig(path, dpi=300, bbox_inches="tight")
     plt.close()
     print(f"  Saved: waterfall_mean.png")
 
@@ -249,13 +278,21 @@ def plot_waterfall_samples(shap_values: shap.Explanation, n: int) -> None:
     if n == 0:
         return
     indices = range(len(shap_values)) if n == -1 else range(min(n, len(shap_values)))
+    renamed_names = [FEATURE_LABELS.get(name, name) for name in shap_values.feature_names]
     for i in indices:
+        sv = shap_values[i]
+        renamed = shap.Explanation(
+            values=sv.values,
+            base_values=sv.base_values,
+            data=sv.data,
+            feature_names=renamed_names,
+        )
         plt.figure()
-        shap.plots.waterfall(shap_values[i], max_display=20, show=False)
-        plt.title(f"Random Forest — SHAP Waterfall (sample {i})")
+        shap.plots.waterfall(renamed, max_display=20, show=False)
+        plt.title(f"Random Forest — SHAP Waterfall (observation {i + 1})", fontsize=16)
         plt.tight_layout()
         path = OUTPUT_DIR / f"waterfall_{i}.png"
-        plt.savefig(path, dpi=150, bbox_inches="tight")
+        plt.savefig(path, dpi=300, bbox_inches="tight")
         plt.close()
     print(f"  Saved: waterfall_0 … waterfall_{list(indices)[-1]}.png")
 

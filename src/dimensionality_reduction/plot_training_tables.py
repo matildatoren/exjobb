@@ -23,6 +23,15 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import polars as pl
 
+plt.rcParams.update({
+    "font.size":        13,
+    "axes.titlesize":   16,
+    "axes.labelsize":   14,
+    "xtick.labelsize":  12,
+    "ytick.labelsize":  12,
+    "legend.fontsize":  12,
+})
+
 SRC = Path(__file__).resolve().parents[1]
 sys.path.append(str(SRC))
 
@@ -216,7 +225,7 @@ def plot_tables(
         colWidths=col_widths,
     )
     table1.auto_set_font_size(False)
-    table1.set_fontsize(11)
+    table1.set_fontsize(13)
     table1.scale(1, 1.6)
 
     for j, color in enumerate(colors):
@@ -224,10 +233,10 @@ def plot_tables(
         cell.set_facecolor(color + "33")   # light tint
 
     ax1.set_title("Intensive Neurohabilitation Training Participation",
-                  fontsize=13, fontweight="bold", pad=12)
+                  fontsize=16, fontweight="bold", pad=12)
     plt.tight_layout()
     p1 = FIGURES_DIR / "table_intensive_participation.png"
-    fig1.savefig(p1, dpi=150, bbox_inches="tight")
+    fig1.savefig(p1, dpi=300, bbox_inches="tight")
     print(f"  Saved: {p1.name}")
     plt.show()
 
@@ -254,7 +263,7 @@ def plot_tables(
         colWidths=col_w,
     )
     table2.auto_set_font_size(False)
-    table2.set_fontsize(10)
+    table2.set_fontsize(12)
     table2.scale(1, 1.5)
 
     # Color header cells per group
@@ -262,10 +271,10 @@ def plot_tables(
         table2[0, j + 1].set_facecolor(color + "55")
 
     ax2.set_title("Average Training Hours per Therapy Category (per participant per year)",
-                  fontsize=12, fontweight="bold", pad=12)
+                  fontsize=16, fontweight="bold", pad=12)
     plt.tight_layout()
     p2 = FIGURES_DIR / "table_category_hours.png"
-    fig2.savefig(p2, dpi=150, bbox_inches="tight")
+    fig2.savefig(p2, dpi=300, bbox_inches="tight")
     print(f"  Saved: {p2.name}")
     plt.show()
 
@@ -289,17 +298,17 @@ def plot_tables(
         colWidths=col_w3,
     )
     table3.auto_set_font_size(False)
-    table3.set_fontsize(10)
+    table3.set_fontsize(12)
     table3.scale(1, 1.6)
 
     for j, color in enumerate(colors):
         table3[0, j + 1].set_facecolor(color + "55")
 
     ax3.set_title("Overall Average Training Hours per Year (per participant)",
-                  fontsize=12, fontweight="bold", pad=12)
+                  fontsize=16, fontweight="bold", pad=12)
     plt.tight_layout()
     p3 = FIGURES_DIR / "table_overall_hours.png"
-    fig3.savefig(p3, dpi=150, bbox_inches="tight")
+    fig3.savefig(p3, dpi=300, bbox_inches="tight")
     print(f"  Saved: {p3.name}")
     plt.show()
 

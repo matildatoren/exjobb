@@ -48,6 +48,12 @@ IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
 plt.rcParams.update({
     "font.family":       "DejaVu Sans",
+    "font.size":         13,
+    "axes.titlesize":    16,
+    "axes.labelsize":    14,
+    "xtick.labelsize":   12,
+    "ytick.labelsize":   12,
+    "legend.fontsize":   12,
     "axes.spines.top":   False,
     "axes.spines.right": False,
     "axes.grid":         True,
@@ -213,10 +219,10 @@ def make_summary_table(sum_df: pl.DataFrame) -> None:
             cell.set_text_props(color="white", fontweight="bold")
         else:
             cell.set_facecolor("#f7f9fb" if r % 2 == 0 else "white")
-    ax.set_title("LLM vs rule-based — summary metrics", fontsize=11,
+    ax.set_title("LLM vs Rule-based — Summary Metrics", fontsize=16,
                  fontweight="bold", pad=10)
     plt.tight_layout()
-    plt.savefig(IMAGES_DIR / "summary_table.png", dpi=200, bbox_inches="tight")
+    plt.savefig(IMAGES_DIR / "summary_table.png", dpi=300, bbox_inches="tight")
     plt.close()
     print("  Saved summary_table.png")
 
@@ -245,16 +251,15 @@ def make_outlier_tables(cdf: pl.DataFrame, top_n: int = 15) -> None:
 
         for row in top.iter_rows(named=True):
             delta    = row[delta_col]
-            short_id = str(row["introductory_id"])[:8] + "…"
             d_bg     = "#ffd6d6" if delta > 0 else "#d6f5d6"
             cell_text.append([
-                short_id, str(row["age"]),
+                str(row["age"]),
                 _fmt(row[llm_col]), _fmt(row[man_col]),
                 f"{delta:+.3f}", _fmt(row[abs_col]),
             ])
-            cell_colors.append(["white", "white", "white", "white", d_bg, "#f0f0f0"])
+            cell_colors.append(["white", "white", "white", d_bg, "#f0f0f0"])
 
-        headers = ["ID (first 8)", "Age", f"LLM {label}", f"Rule {label}", "Δ (LLM−rule)", "|Δ|"]
+        headers = ["Age", f"LLM {label}", f"Rule {label}", "Δ (LLM−rule)", "|Δ|"]
 
         fig, ax = plt.subplots(figsize=(10, 0.45 * top_n + 1.8))
         ax.axis("off")
@@ -272,12 +277,11 @@ def make_outlier_tables(cdf: pl.DataFrame, top_n: int = 15) -> None:
 
         ax.set_title(
             f"Top {top_n} largest discrepancies — {label} score\n"
-            f"(red = LLM scored higher, green = LLM scored lower)  "
-            f"| Full IDs in {JOINED_CSV.name}",
-            fontsize=9, fontweight="bold", pad=10,
+            f"(red = LLM scored higher, green = LLM scored lower)",
+            fontsize=14, fontweight="bold", pad=10,
         )
         plt.tight_layout()
-        plt.savefig(IMAGES_DIR / f"outliers_{label.lower()}.png", dpi=200, bbox_inches="tight")
+        plt.savefig(IMAGES_DIR / f"outliers_{label.lower()}.png", dpi=300, bbox_inches="tight")
         plt.close()
         print(f"  Saved outliers_{label.lower()}.png")
 
@@ -315,7 +319,7 @@ def make_before_after_cards(cdf: pl.DataFrame, n_cards: int = 8) -> None:
     axes = axes.flatten()
     fig.suptitle(
         "Story-driven adjustments — top cases where free text changed the score",
-        fontsize=12, fontweight="bold", y=1.01,
+        fontsize=16, fontweight="bold", y=1.01,
     )
 
     GREEN = "#27ae60"
@@ -326,7 +330,6 @@ def make_before_after_cards(cdf: pl.DataFrame, n_cards: int = 8) -> None:
         ax = axes[i]
         ax.axis("off")
 
-        short_id    = str(row["introductory_id"])[:8] + "…"
         age         = row["age"]
         s_ms        = row["struct_milestone_score"]
         s_imp       = row["struct_impairment_score"]
@@ -347,7 +350,7 @@ def make_before_after_cards(cdf: pl.DataFrame, n_cards: int = 8) -> None:
         # Header
         header_color = GREEN if delta_com > 0 else RED
         direction    = "▲ Story raised score" if delta_com > 0 else "▼ Story lowered score"
-        ax.text(0.5, 0.95, f"ID: {short_id}  |  Age: {age}  |  {direction}",
+        ax.text(0.5, 0.95, f"Age: {age}  |  {direction}",
                 transform=ax.transAxes, ha="center", va="top",
                 fontsize=9, fontweight="bold", color=header_color)
 
@@ -393,7 +396,7 @@ def make_before_after_cards(cdf: pl.DataFrame, n_cards: int = 8) -> None:
         axes[j].set_visible(False)
 
     plt.tight_layout()
-    plt.savefig(IMAGES_DIR / "before_after_cards.png", dpi=200, bbox_inches="tight")
+    plt.savefig(IMAGES_DIR / "before_after_cards.png", dpi=300, bbox_inches="tight")
     plt.close()
     print("  Saved before_after_cards.png")
 
@@ -417,7 +420,7 @@ def make_delta_distribution(cdf: pl.DataFrame) -> None:
     fig, axes = plt.subplots(1, 3, figsize=(13, 4), sharey=False)
     fig.suptitle(
         "Story contribution: distribution of (story-adjusted − checkbox-only) score",
-        fontsize=11, fontweight="bold", y=1.02,
+        fontsize=16, fontweight="bold", y=1.02,
     )
 
     for ax, (col, label, color) in zip(axes, cols):
@@ -441,13 +444,13 @@ def make_delta_distribution(cdf: pl.DataFrame) -> None:
             fontsize=8, bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.8),
         )
 
-        ax.set_xlabel("Score change from story", fontsize=9)
-        ax.set_ylabel("Count", fontsize=9)
-        ax.set_title(label, fontsize=10, fontweight="bold")
-        ax.legend(fontsize=7.5)
+        ax.set_xlabel("Score change from story")
+        ax.set_ylabel("Count")
+        ax.set_title(label, fontweight="bold")
+        ax.legend()
 
     plt.tight_layout()
-    plt.savefig(IMAGES_DIR / "delta_distribution.png", dpi=200, bbox_inches="tight")
+    plt.savefig(IMAGES_DIR / "delta_distribution.png", dpi=300, bbox_inches="tight")
     plt.close()
     print("  Saved delta_distribution.png")
 
@@ -480,7 +483,7 @@ def make_scatter_adjustments(cdf: pl.DataFrame) -> None:
     fig.suptitle(
         "Checkbox-only score (x) vs story-adjusted score (y)\n"
         "Colour shows direction of story-driven adjustment",
-        fontsize=11, fontweight="bold", y=1.03,
+        fontsize=16, fontweight="bold", y=1.03,
     )
 
     for ax, (struct_col, llm_col, delta_col, label) in zip(axes, score_triples):
@@ -508,19 +511,19 @@ def make_scatter_adjustments(cdf: pl.DataFrame) -> None:
 
         ax.set_xlim(-0.05, 1.05)
         ax.set_ylim(-0.05, 1.05)
-        ax.set_xlabel("Checkbox-only score", fontsize=9)
-        ax.set_ylabel("Story-adjusted score", fontsize=9)
-        ax.set_title(label, fontsize=10, fontweight="bold")
+        ax.set_xlabel("Checkbox-only score")
+        ax.set_ylabel("Story-adjusted score")
+        ax.set_title(label, fontweight="bold")
 
         legend_handles = [
             mpatches.Patch(color=COL_UP,   label=f"Story raised  (n={n_up})"),
             mpatches.Patch(color=COL_DOWN, label=f"Story lowered (n={n_down})"),
             mpatches.Patch(color=COL_NONE, label=f"Unchanged     (n={n_none})"),
         ]
-        ax.legend(handles=legend_handles, fontsize=7.5, loc="upper left")
+        ax.legend(handles=legend_handles, loc="upper left")
 
     plt.tight_layout()
-    plt.savefig(IMAGES_DIR / "scatter_adjustments.png", dpi=200, bbox_inches="tight")
+    plt.savefig(IMAGES_DIR / "scatter_adjustments.png", dpi=300, bbox_inches="tight")
     plt.close()
     print("  Saved scatter_adjustments.png")
 
