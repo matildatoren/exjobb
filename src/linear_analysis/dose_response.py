@@ -47,9 +47,10 @@ CONFIG = {
         "ee9e6fc1-a9d3-4f45-aa0e-01723ebb2930",
         "4c89ca0a-f5c3-4b7b-96be-a7919c679303",
         "fcdc7e60-1c2f-4178-bafd-db1d42e869ee",
-],
+    ],
 
     # Output — vilket/vilka motorscores att analysera
+    # Combined score är borttaget (det är bara ett medelvärde av milestone + impairment)
     "scores": {
         "milestones": {
             "delta_col": "delta_milestone_score_setvalue",
@@ -58,10 +59,6 @@ CONFIG = {
         "impairments": {
             "delta_col": "delta_impairment_score_setvalue",
             "title":     "Impairment Score",
-        },
-        "combined": {
-            "delta_col": "delta_combined_score_setvalue",
-            "title":     "Combined Score",
         },
         "simplified": {
             "delta_col": "delta_motorical_score",
@@ -75,8 +72,6 @@ CONFIG = {
             "delta_col": "delta_severity_score",
             "title":     "Severity Score",
         },
-        
-        
     },
 
     # Input — träningskomponenter att inkludera i komponentanalysen
@@ -88,7 +83,7 @@ CONFIG = {
         # ("log_total_home_training_hours_weighted",  "Home training, weigted"),
         # ("log_total_other_training_hours_weighted", "Sports / other, weighted"),
         # ("log_neurohab_hours_weighted",             "Intensive therapy, weighted"),
-        # ("log_active_total_hours_weighted",         "Combined active total, weighted"),    
+        # ("log_active_total_hours_weighted",         "Combined active total, weighted"),
         # ("log_cat_neurodevelopmental_reflex",         "Neurodevelopmental and Reflex based therapies"),
         # ("log_cat_motor_learning_task",         "Motor learning and task oriented learning"),
         # ("log_cat_technology_assisted",         "Technology assisted therapies"),
@@ -142,7 +137,7 @@ def build_analysis_df(
         .select(keep)
         .filter(pl.col(delta_col).is_not_null())
         .pipe(lambda df: (
-        df.filter(pl.col("introductory_id").is_in(CONFIG["filter_ids"])) #FILTRERAR BARA DE SOM ÄR FÄRDIGA OCH SKRIVS UPPE I CONFIG!!
+        df.filter(pl.col("introductory_id").is_in(CONFIG["filter_ids"]))
             if CONFIG["filter_ids"] else df
         ))
         .to_pandas()
@@ -153,7 +148,7 @@ def build_analysis_df(
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Regression helpers  (unchanged from original)
+# Regression helpers
 # ════════════════════════════════════════════════════════════════════════════
 
 def _fit_linear(X: pd.DataFrame, y: pd.Series):
@@ -300,7 +295,7 @@ def print_summary(results: dict, title: str = "Motor Score"):
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Figures  (logic unchanged, column names updated)
+# Figures
 # ════════════════════════════════════════════════════════════════════════════
 
 def plot_training_components(
@@ -312,8 +307,8 @@ def plot_training_components(
     panels    = results["component_results"]
 
     n       = len(panels)
-    n_cols  = 2                       
-    n_rows  = (n + n_cols - 1) // n_cols 
+    n_cols  = 2
+    n_rows  = (n + n_cols - 1) // n_cols
 
     fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 5 * n_rows))
     axes = axes.flatten()
@@ -334,20 +329,21 @@ def plot_training_components(
             ax.plot(x_range, model.predict(x_range_df), color="orange", linewidth=2)
 
         ax.axhline(0, color="gray", linewidth=0.8, linestyle=":")
-        ax.set_xlabel("Training dose (hours / year)")
-        ax.set_ylabel(f"Δ {title}")
-        ax.set_title(r["label"])
+        ax.set_xlabel("Training dose (hours / year)", fontsize=13)
+        ax.set_ylabel(f"Δ {title}", fontsize=13)
+        ax.set_title(r["label"], fontsize=15)
+        ax.tick_params(axis="both", labelsize=12)
         ax.annotate(
             f"k = {r['coeff']:.3f}\nR² = {r['r2']:.3f}\nn = {r['n']}",
             xy=(0.97, 0.97), xycoords="axes fraction",
-            ha="right", va="top", fontsize=9,
+            ha="right", va="top", fontsize=12,
             bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.7),
         )
 
     for j in range(len(panels), 4):
         axes[j].set_visible(False)
 
-    plt.suptitle(f"Motorscore improvement by Training-category — {title}", fontsize=13)
+    plt.suptitle(f"Motorscore improvement by Training-category — {title}", fontsize=16)
     plt.tight_layout()
     plt.savefig(FIGURES_DIR / filename, dpi=150)
     print(f"Saved: {filename}")
@@ -379,21 +375,25 @@ def plot_treatment_effects(
         bp["boxes"][1].set_facecolor("#A9DFBF")
 
         ax.set_xticks([1, 2])
-        ax.set_xticklabels([f"No\n(n={len(not_received)})", f"Yes\n(n={len(received)})"])
-        ax.set_title(col.replace("med_", "").replace("_", " ").title())
-        ax.set_xlabel("Received treatment")
+        ax.set_xticklabels(
+            [f"No\n(n={len(not_received)})", f"Yes\n(n={len(received)})"],
+            fontsize=13,
+        )
+        ax.set_title(col.replace("med_", "").replace("_", " ").title(), fontsize=15)
+        ax.set_xlabel("Received treatment", fontsize=13)
+        ax.tick_params(axis="y", labelsize=12)
         ax.axhline(0, color="gray", linewidth=0.8, linestyle=":")
 
         diff = received.mean() - not_received.mean()
         ax.annotate(
             f"Δ mean = {diff:+.2f}",
             xy=(0.5, 0.97), xycoords="axes fraction",
-            ha="center", va="top", fontsize=9,
+            ha="center", va="top", fontsize=12,
             bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.7),
         )
 
-    axes[0].set_ylabel(f"Δ {title}")
-    plt.suptitle(f"Score Change by Medical Treatment — {title}", fontsize=13)
+    axes[0].set_ylabel(f"Δ {title}", fontsize=13)
+    plt.suptitle(f"Score Change by Medical Treatment — {title}", fontsize=16)
     plt.tight_layout()
     plt.savefig(FIGURES_DIR / filename, dpi=150)
     print(f"Saved: {filename}")
@@ -429,10 +429,11 @@ def plot_overall_dose_response(
     )
 
     ax.axhline(0, color="gray", linewidth=0.8, linestyle=":")
-    ax.set_xlabel("Total active hours / year")
-    ax.set_ylabel(f"Δ {title}")
-    ax.set_title(f"Overall Dose-Response: Active Hours vs {title} Change")
-    ax.legend()
+    ax.set_xlabel("Total active hours / year", fontsize=13)
+    ax.set_ylabel(f"Δ {title}", fontsize=13)
+    ax.set_title(f"Overall Dose-Response: Active Hours vs {title} Change", fontsize=15)
+    ax.tick_params(axis="both", labelsize=12)
+    ax.legend(fontsize=12)
     plt.tight_layout()
     plt.savefig(FIGURES_DIR / filename, dpi=150)
     print(f"Saved: {filename}")
