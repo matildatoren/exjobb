@@ -17,67 +17,67 @@ from src.preprocessing.motor_development import (
 # Lookup tables
 # ════════════════════════════════════════════════════════════════════════════
 
-# POSSIBLE_MILESTONES_BY_AGE_GMFCS: dict[int, dict[int, int]] = {
-#     # ┌─────────────────────────────────────────────────────────────────────────┐
-#     # │ Gross motor (21 total)                                                  │
-#     # │  Pre-walking   1–6 : rolls, sits, crawls, stands w support, cruises     │
-#     # │  Basic walking 7–11: first steps, stairs on hands/knees, squats, runs   │
-#     # │  Advanced     12–21: balance, tricycle, hops, skips, bike, rope, sports │
-#     # │                                                                         │
-#     # │ Fine motor (20 total)                                                   │
-#     # │  Bucket 1  1–5 : grasps, transfers, pincer, self-feeds                 │
-#     # │  Bucket 2  6–8 : turns pages, stacks blocks, scribbles                 │
-#     # │  Bucket 3  9–14: copies lines/shapes, scissors, draws, pencil grasp    │
-#     # │  Bucket 4 15–20: laces, writes words, threading needle, craftwork      │
-#     # │                                                                         │
-#     # │ GMFCS IV/V: gross motor 7–21 BLOCKED (cannot walk)                     │
-#     # │ GMFCS III : gross motor 11–21 BLOCKED (no running/jumping/hopping)     │
-#     # │ GMFCS II  : gross motor 17–21 reduced (hops, skips, 2-wheel bike hard) │
-#     # └─────────────────────────────────────────────────────────────────────────┘
-#     #        I    II   III   IV    V
-#     1: {1: 12, 2: 12, 3:  12, 4:  12, 5:  10},  # pre-walking: small gap between levels
-#     2: {1: 20, 2: 20, 3: 18, 4:  15, 5:  13},  # IV/V gain only fine motor; III walks but can't run
-#     3: {1: 28, 2: 28, 3: 23, 4: 20, 5:  16},  # III plateaus (no running/jumping); IV/V fine motor only
-#     4: {1: 41, 2: 37, 3: 29, 4: 26, 5:  18},  # I/II gain advanced milestones; IV/V max ~3 gross + 9 fine
-# }
-
 POSSIBLE_MILESTONES_BY_AGE_GMFCS: dict[int, dict[int, int]] = {
-    1: {1: 12, 2: 11, 3:  9, 4:  7, 5:  4},  # pre-walking: small gap between levels
-    2: {1: 19, 2: 17, 3: 13, 4:  9, 5:  5},  # IV/V gain only fine motor; III walks but can't run
-    3: {1: 27, 2: 23, 3: 16, 4: 11, 5:  6},  # III plateaus (no running/jumping); IV/V fine motor only
-    4: {1: 35, 2: 29, 3: 18, 4: 12, 5:  7},  # I/II gain advanced milestones; IV/V max ~3 gross + 9 fine
+    # ┌─────────────────────────────────────────────────────────────────────────┐
+    # │ Gross motor (21 total)                                                  │
+    # │  Pre-walking   1–6 : rolls, sits, crawls, stands w support, cruises     │
+    # │  Basic walking 7–11: first steps, stairs on hands/knees, squats, runs   │
+    # │  Advanced     12–21: balance, tricycle, hops, skips, bike, rope, sports │
+    # │                                                                         │
+    # │ Fine motor (20 total)                                                   │
+    # │  Bucket 1  1–5 : grasps, transfers, pincer, self-feeds                 │
+    # │  Bucket 2  6–8 : turns pages, stacks blocks, scribbles                 │
+    # │  Bucket 3  9–14: copies lines/shapes, scissors, draws, pencil grasp    │
+    # │  Bucket 4 15–20: laces, writes words, threading needle, craftwork      │
+    # │                                                                         │
+    # │ GMFCS IV/V: gross motor 7–21 BLOCKED (cannot walk)                     │
+    # │ GMFCS III : gross motor 11–21 BLOCKED (no running/jumping/hopping)     │
+    # │ GMFCS II  : gross motor 17–21 reduced (hops, skips, 2-wheel bike hard) │
+    # └─────────────────────────────────────────────────────────────────────────┘
+    #        I    II   III   IV    V
+    1: {1: 12, 2: 12, 3:  12, 4:  12, 5:  10},  # pre-walking: small gap between levels
+    2: {1: 20, 2: 20, 3: 18, 4:  15, 5:  13},  # IV/V gain only fine motor; III walks but can't run
+    3: {1: 28, 2: 28, 3: 23, 4: 20, 5:  16},  # III plateaus (no running/jumping); IV/V fine motor only
+    4: {1: 41, 2: 37, 3: 29, 4: 26, 5:  18},  # I/II gain advanced milestones; IV/V max ~3 gross + 9 fine
 }
 
-# N_NAMED_BY_AGE_GMFCS: dict[int, dict[int, int]] = {
-#     # ┌─────────────────────────────────────────────────────────────────────────┐
-#     # │ Lower-body gait impairments (7 named):                                  │
-#     # │  In-toeing, out-toeing, crouch, scissoring, toe-walking,               │
-#     # │  jump gait, dropping foot                                               │
-#     # │  → GMFCS I/II : all 7 applicable                                        │
-#     # │  → GMFCS III  : ~5 applicable (gait visible when walking with device)   │
-#     # │  → GMFCS IV/V : 0 applicable — non-walkers, gait patterns absent        │
-#     # │                                                                         │
-#     # │ Upper-body impairments (11 named):                                      │
-#     # │  Grip, releasing, thumb-in-palm, stiff fingers, finger control,        │
-#     # │  pinching, wrist flexion, pronation, bilateral coord, elbow ext,       │
-#     # │  difficulty using both hands                                            │
-#     # │  → All GMFCS applicable; GMFCS V reduced (severe involvement)          │
-#     # │                                                                         │
-#     # │ Year 1: child not walking yet regardless → fewer gait signs visible     │
-#     # └─────────────────────────────────────────────────────────────────────────┘
-#     #        I    II   III   IV    V
-#     1: {1:  11, 2:  11, 3:  11, 4:  11, 5:  8},  # no walking yet; 3 gait signs + 6 upper for I/II
-#     2: {1: 17, 2: 17, 3: 15, 4: 11, 5:  8},  # I/II: 6 gait + 10 upper; IV/V: 0 gait + 11/7 upper
-#     3: {1: 17, 2: 17, 3: 16, 4: 11, 5:  9},  # I/II: all 7 gait + 10 upper; III: 5 gait + 10 upper
-#     4: {1: 17, 2: 17, 3: 16, 4: 11, 5:  9},  # I/II: 7 gait + 11 upper = 18; IV/V: 0 gait + 11/8 upper
+# POSSIBLE_MILESTONES_BY_AGE_GMFCS: dict[int, dict[int, int]] = {
+#     1: {1: 12, 2: 11, 3:  9, 4:  7, 5:  4},  # pre-walking: small gap between levels
+#     2: {1: 19, 2: 17, 3: 13, 4:  9, 5:  5},  # IV/V gain only fine motor; III walks but can't run
+#     3: {1: 27, 2: 23, 3: 16, 4: 11, 5:  6},  # III plateaus (no running/jumping); IV/V fine motor only
+#     4: {1: 35, 2: 29, 3: 18, 4: 12, 5:  7},  # I/II gain advanced milestones; IV/V max ~3 gross + 9 fine
 # }
 
 N_NAMED_BY_AGE_GMFCS: dict[int, dict[int, int]] = {
-    1: {1:  9, 2:  9, 3:  8, 4:  7, 5:  5},  # no walking yet; 3 gait signs + 6 upper for I/II
-    2: {1: 16, 2: 16, 3: 14, 4: 11, 5:  7},  # I/II: 6 gait + 10 upper; IV/V: 0 gait + 11/7 upper
-    3: {1: 17, 2: 17, 3: 15, 4: 11, 5:  8},  # I/II: all 7 gait + 10 upper; III: 5 gait + 10 upper
-    4: {1: 18, 2: 18, 3: 16, 4: 11, 5:  8},  # I/II: 7 gait + 11 upper = 18; IV/V: 0 gait + 11/8 upper
+    # ┌─────────────────────────────────────────────────────────────────────────┐
+    # │ Lower-body gait impairments (7 named):                                  │
+    # │  In-toeing, out-toeing, crouch, scissoring, toe-walking,               │
+    # │  jump gait, dropping foot                                               │
+    # │  → GMFCS I/II : all 7 applicable                                        │
+    # │  → GMFCS III  : ~5 applicable (gait visible when walking with device)   │
+    # │  → GMFCS IV/V : 0 applicable — non-walkers, gait patterns absent        │
+    # │                                                                         │
+    # │ Upper-body impairments (11 named):                                      │
+    # │  Grip, releasing, thumb-in-palm, stiff fingers, finger control,        │
+    # │  pinching, wrist flexion, pronation, bilateral coord, elbow ext,       │
+    # │  difficulty using both hands                                            │
+    # │  → All GMFCS applicable; GMFCS V reduced (severe involvement)          │
+    # │                                                                         │
+    # │ Year 1: child not walking yet regardless → fewer gait signs visible     │
+    # └─────────────────────────────────────────────────────────────────────────┘
+    #        I    II   III   IV    V
+    1: {1:  11, 2:  11, 3:  11, 4:  11, 5:  8},  # no walking yet; 3 gait signs + 6 upper for I/II
+    2: {1: 17, 2: 17, 3: 15, 4: 11, 5:  8},  # I/II: 6 gait + 10 upper; IV/V: 0 gait + 11/7 upper
+    3: {1: 17, 2: 17, 3: 16, 4: 11, 5:  9},  # I/II: all 7 gait + 10 upper; III: 5 gait + 10 upper
+    4: {1: 17, 2: 17, 3: 16, 4: 11, 5:  9},  # I/II: 7 gait + 11 upper = 18; IV/V: 0 gait + 11/8 upper
 }
+
+# N_NAMED_BY_AGE_GMFCS: dict[int, dict[int, int]] = {
+#     1: {1:  9, 2:  9, 3:  8, 4:  7, 5:  5},  # no walking yet; 3 gait signs + 6 upper for I/II
+#     2: {1: 16, 2: 16, 3: 14, 4: 11, 5:  7},  # I/II: 6 gait + 10 upper; IV/V: 0 gait + 11/7 upper
+#     3: {1: 17, 2: 17, 3: 15, 4: 11, 5:  8},  # I/II: all 7 gait + 10 upper; III: 5 gait + 10 upper
+#     4: {1: 18, 2: 18, 3: 16, 4: 11, 5:  8},  # I/II: 7 gait + 11 upper = 18; IV/V: 0 gait + 11/8 upper
+# }
 
 _GMFCS_STR_TO_INT: dict[str, int] = {
     "Level I – Walks without limitations": 1,
