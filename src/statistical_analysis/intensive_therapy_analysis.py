@@ -41,9 +41,74 @@ sys.path.append(str(ROOT / "src"))
 FIGURES_DIR = Path(__file__).resolve().parents[2] / "outputs" / "intensive_analysis"
 FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
-# BASE_DIR = Path(__file__).resolve().parent
-# IMAGES_DIR = BASE_DIR / "images"
-# IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+
+# ════════════════════════════════════════════════════════════════════════════
+# ID-filter — sätt till None för att inkludera alla barn,
+# eller till en lista med introductory_id-strängar för att begränsa analysen.
+#
+# Exempel:
+#   INCLUDE_IDS = None                  # alla barn
+#   INCLUDE_IDS = ["abc123", "def456"]  # bara dessa två
+# ════════════════════════════════════════════════════════════════════════════
+
+INCLUDE_IDS: list[str] | None = [
+    "e0129e7b-c90f-4f49-87d3-6987eb577cdb",
+    "d87153c9-75b3-4305-99a4-42abc0366651",
+    "47a9e4ae-8d91-4070-ae18-f2d9af891299",
+    "1950325f-99da-47b4-b49d-735253ba0aaa",
+    "ee9e6fc1-a9d3-4f45-aa0e-01723ebb2930",
+
+    "498a4d90-77c6-41b2-ad39-517a2c2a9702",
+    "52dac13b-a335-449d-a7db-a58e40b5e213",
+    "42475b28-2dfd-4114-ac53-d8619881dd2f",
+    "7e68f3b3-509b-4352-8eb1-400c9407ac9b",
+    "4be3b41c-a0b4-4e7b-ae49-896b37ea2052",
+    "fcdc7e60-1c2f-4178-bafd-db1d42e869ee",
+    "30302f7a-c470-47bf-8f0e-d104b3065d99",
+    "c8f4ec50-18b6-47ed-92a3-919da180a10d",
+    "8dba1f55-9e79-4e62-90c3-02e9609d3feb",
+    "d2703a20-7b4a-4624-b31a-306eebe4caa0",
+    "f1856ef8-2fe0-480d-9635-cfc0be308458",
+    "771d12c3-bc1a-4a97-ad27-00d35b24f87e",
+    "1d0afd8d-6945-488a-964c-724e95db6696",
+    "1019fb0a-480d-4bef-b8f9-493b9dfe253b",
+    "6e7aeec2-2846-433d-a4ac-0e753da08530",
+    "e30d335e-3a7a-484d-951d-f8e3f17ccfb3",
+    "4c89ca0a-f5c3-4b7b-96be-a7919c679303",
+    "578adb11-a12f-4121-a567-afe67c25640b",
+    "0a584ba1-cdf4-4251-9168-5f8ccc0240e3",
+    "7e42b31a-c597-4418-9bf6-a8c3286d049f",
+    "3c1f5e61-56fd-4ac3-af9e-0d6fe054ddb7",
+    "f9231c8d-2ade-4c0e-a878-a9524ccc3d65",
+    "df67e7ea-0b50-408b-9342-4c29d0efa839",
+    "16f3f961-07a2-4099-8498-1bad9c2faa19",
+    "44cd783c-b33d-4553-89cd-2a73b59e1982",
+    "cd26a009-6e51-4372-b151-b7d2bb8b7183",
+    "c0990a55-916e-47ba-b29a-aee83d9f33c9",
+    "89e4bf27-9a6f-45e8-a415-ef53f23f7931",
+    "65ab3206-7371-4471-845c-6d238050494f",
+]
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# ID-filterfunktion
+# ════════════════════════════════════════════════════════════════════════════
+
+def filter_ids(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Filtrerar DataFrame till INCLUDE_IDS om listan är satt.
+    Skriver ut en sammanfattning av hur många barn som återstår.
+    """
+    total = df["introductory_id"].nunique()
+    if INCLUDE_IDS is not None:
+        df = df[df["introductory_id"].isin(INCLUDE_IDS)]
+        missing = [i for i in INCLUDE_IDS if i not in df["introductory_id"].values]
+        if missing:
+            print(f"  Varning: dessa IDs hittades inte i datan: {missing}")
+    remaining = df["introductory_id"].nunique()
+    suffix = " (alla barn inkluderade)" if INCLUDE_IDS is None else f"  (filterlista: {len(INCLUDE_IDS)} IDs)"
+    print(f"  ID-filter: {total} → {remaining} barn{suffix}")
+    return df
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -113,7 +178,12 @@ def build_analysis_dataset(data: dict[str, pl.DataFrame]) -> pd.DataFrame:
         )
     )
 
-    return df.to_pandas()
+    df_pd = df.to_pandas()
+
+    # ── Filtrera på godkända IDs ─────────────────────────────────────────────
+    df_pd = filter_ids(df_pd)
+
+    return df_pd
 
 
 # ════════════════════════════════════════════════════════════════════════════

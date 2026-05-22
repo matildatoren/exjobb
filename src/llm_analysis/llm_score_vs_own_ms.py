@@ -23,10 +23,11 @@ import matplotlib.patches as mpatches
 import polars as pl
 
 # ── resolve imports ────────────────────────────────────────────────────────────
-SRC_ROOT     = Path(__file__).resolve().parent
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SRC_ROOT     = Path(__file__).resolve().parent          # src/llm_analysis/
+PROJECT_ROOT = Path(__file__).resolve().parents[2]      # exjobb/
 sys.path.append(str(PROJECT_ROOT))
 sys.path.append(str(SRC_ROOT))
+sys.path.append(str(PROJECT_ROOT / "src"))            
 
 from connect_db import get_connection
 from dataloader import load_data
@@ -188,7 +189,6 @@ def build_summary_df(cdf: pl.DataFrame) -> pl.DataFrame:
     return pl.DataFrame([
         _eval_pair(cdf, "llm_milestone_score",  "milestone_score", "milestone"),
         _eval_pair(cdf, "llm_impairment_score", "mms_normalized",  "impairment"),
-        _eval_pair(cdf, "llm_combined_score",   "combined_score",  "combined"),
     ])
 
 
@@ -233,7 +233,6 @@ def make_summary_table(sum_df: pl.DataFrame) -> None:
 
 def make_outlier_tables(cdf: pl.DataFrame, top_n: int = 15) -> None:
     score_configs = [
-        ("abs_delta_combined",   "delta_combined",   "llm_combined_score",   "combined_score",  "Combined"),
         ("abs_delta_milestone",  "delta_milestone",  "llm_milestone_score",  "milestone_score", "Milestone"),
         ("abs_delta_impairment", "delta_impairment", "llm_impairment_score", "mms_normalized",  "Impairment"),
     ]
@@ -333,10 +332,8 @@ def make_before_after_cards(cdf: pl.DataFrame, n_cards: int = 8) -> None:
         age         = row["age"]
         s_ms        = row["struct_milestone_score"]
         s_imp       = row["struct_impairment_score"]
-        s_com       = row["struct_combined_score"]
         l_ms        = row["llm_milestone_score"]
         l_imp       = row["llm_impairment_score"]
-        l_com       = row["llm_combined_score"]
         delta_com   = row["story_delta_combined"]
         adjustments = str(row["story_adjustments"] or "")
 
@@ -357,9 +354,8 @@ def make_before_after_cards(cdf: pl.DataFrame, n_cards: int = 8) -> None:
         # Score comparison row
         score_y = 0.80
         for col_x, lbl, sv, lv in [
-            (0.18, "Milestone",  s_ms,  l_ms),
-            (0.50, "Impairment", s_imp, l_imp),
-            (0.82, "Combined",   s_com, l_com),
+            (0.30, "Milestone",  s_ms,  l_ms),
+            (0.70, "Impairment", s_imp, l_imp),
         ]:
             d = lv - sv
             d_col = GREEN if d > 0 else (RED if d < 0 else GREY)
@@ -414,7 +410,6 @@ def make_delta_distribution(cdf: pl.DataFrame) -> None:
     cols = [
         ("story_delta_milestone",  "Milestone",  "#4C72B0"),
         ("story_delta_impairment", "Impairment", "#DD8452"),
-        ("story_delta_combined",   "Combined",   "#55A868"),
     ]
 
     fig, axes = plt.subplots(1, 3, figsize=(13, 4), sharey=False)
@@ -436,7 +431,7 @@ def make_delta_distribution(cdf: pl.DataFrame) -> None:
                    label=f"Mean = {_mean(vals):+.3f}")
 
         # Annotate proportion that changed
-        n_changed   = sum(1 for v in vals if abs(v) > 0.01)
+        n_changed   = sum(1 for v in vals if abs(v) > 0.02)
         pct_changed = 100 * n_changed / len(vals)
         ax.annotate(
             f"{pct_changed:.0f}% of rows\nadjusted by story",
@@ -471,7 +466,6 @@ def make_scatter_adjustments(cdf: pl.DataFrame) -> None:
     score_triples = [
         ("struct_milestone_score",  "llm_milestone_score",  "story_delta_milestone",  "Milestone"),
         ("struct_impairment_score", "llm_impairment_score", "story_delta_impairment", "Impairment"),
-        ("struct_combined_score",   "llm_combined_score",   "story_delta_combined",   "Combined"),
     ]
 
     THRESHOLD = 0.02
@@ -479,7 +473,7 @@ def make_scatter_adjustments(cdf: pl.DataFrame) -> None:
     COL_DOWN = "#c0392b"   # story corrected downward
     COL_NONE = "#95a5a6"   # no meaningful change
 
-    fig, axes = plt.subplots(1, 3, figsize=(13, 4.5))
+    fig, axes = plt.subplots(1, 2, figsize=(9, 4.5))
     fig.suptitle(
         "Checkbox-only score (x) vs story-adjusted score (y)\n"
         "Colour shows direction of story-driven adjustment",
@@ -579,7 +573,7 @@ def main() -> None:
         ("story_delta_combined",   "Combined"),
     ]:
         vals      = _clean(cdf[col])
-        n_changed = sum(1 for v in vals if abs(v) > 0.01)
+        n_changed = sum(1 for v in vals if abs(v) > 0.02)
         print(
             f"  {label:12s}  mean Δ={_fmt(_mean(vals))}  "
             f"rows changed={n_changed}/{len(vals)} ({100*n_changed//len(vals)}%)"
