@@ -247,10 +247,14 @@ def motorscore_milestones_setvalue(
     cum     = _cumulate_milestones(per_age)
     gmfcs   = _gmfcs_lookup(introductory_df)
 
-    possible = [
-        int(POSSIBLE_MILESTONES_BY_AGE_GMFCS[int(age)].get(gmfcs.get(uid) or 3))
-        for uid, age in zip(cum["introductory_id"].to_list(), cum["age"].to_list())
-    ]
+    possible = []
+    for uid, age in zip(cum["introductory_id"].to_list(), cum["age"].to_list()):
+        gmfcs_int = gmfcs.get(uid)
+        if gmfcs_int is None:
+            bucket = POSSIBLE_MILESTONES_BY_AGE_GMFCS[int(age)]
+            possible.append(round(sum(bucket.values()) / len(bucket)))
+        else:
+            possible.append(int(POSSIBLE_MILESTONES_BY_AGE_GMFCS[int(age)].get(gmfcs_int, 16)))
 
     return (
         cum.with_columns(pl.Series("possible_milestones", possible))

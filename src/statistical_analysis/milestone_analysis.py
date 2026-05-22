@@ -90,8 +90,8 @@ TARGET_MILESTONES = {
 # Replace with values from clinical literature relevant to your milestone.
 GMFCS_EXPECTED_AGE: dict[int, float | None] = {
     1: 2.0,
-    2: 3.0,
-    3: 3.0,
+    2: 2.5,
+    3: 2.0,
     4: None,
     5: None,  # not expected to achieve independently
 }

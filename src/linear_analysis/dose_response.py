@@ -27,17 +27,17 @@ FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
 CONFIG = {
     "filter_ids": [
-    "498a4d90-77c6-41b2-ad39-517a2c2a9702",
     "e0129e7b-c90f-4f49-87d3-6987eb577cdb",
     "d87153c9-75b3-4305-99a4-42abc0366651",
     "47a9e4ae-8d91-4070-ae18-f2d9af891299",
-    "fcdc7e60-1c2f-4178-bafd-db1d42e869ee",
+    "1950325f-99da-47b4-b49d-735253ba0aaa",
     "ee9e6fc1-a9d3-4f45-aa0e-01723ebb2930",
+    "498a4d90-77c6-41b2-ad39-517a2c2a9702",
+    "fcdc7e60-1c2f-4178-bafd-db1d42e869ee",
     "52dac13b-a335-449d-a7db-a58e40b5e213",
     "42475b28-2dfd-4114-ac53-d8619881dd2f",
     "7e68f3b3-509b-4352-8eb1-400c9407ac9b",
     "4be3b41c-a0b4-4e7b-ae49-896b37ea2052",
-    "1950325f-99da-47b4-b49d-735253ba0aaa",
     "30302f7a-c470-47bf-8f0e-d104b3065d99",
     "c8f4ec50-18b6-47ed-92a3-919da180a10d",
     "8dba1f55-9e79-4e62-90c3-02e9609d3feb",
@@ -74,18 +74,18 @@ CONFIG = {
             "delta_col": "delta_impairment_score_setvalue",
             "title":     "Impairment Score",
         },
-        "simplified": {
-            "delta_col": "delta_motorical_score",
-            "title":     "Simplified Score",
+        "combined": {
+            "delta_col": "delta_combined_score",
+            "title":     "Mean Score",
         },
-        "presence": {
-            "delta_col": "delta_presence_score",
-            "title":     "Presence Score",
-        },
-        "severity": {
-            "delta_col": "delta_severity_score",
-            "title":     "Severity Score",
-        },
+        # "presence": {
+        #     "delta_col": "delta_presence_score",
+        #     "title":     "Presence Score",
+        # },
+        # "severity": {
+        #     "delta_col": "delta_severity_score",
+        #     "title":     "Severity Score",
+        # },
     },
 
     # Input — träningskomponenter att inkludera i komponentanalysen
@@ -123,7 +123,6 @@ def _get_treatment_cols(master_df: pd.DataFrame) -> list[str]:
         c for c in master_df.columns
         if c.startswith("med_") and c.lower() not in exclude
     ]
-
 
 def build_analysis_df(
     master: pl.DataFrame,
