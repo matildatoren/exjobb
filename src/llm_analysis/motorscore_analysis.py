@@ -32,6 +32,11 @@ sys.path.append(str(ROOT))
 
 from connect_db import get_connection
 from dataloader import load_data
+from preprocessing.motor_scores import (
+    POSSIBLE_MILESTONES_BY_AGE_GMFCS,
+    N_NAMED_BY_AGE_GMFCS,
+    _GMFCS_STR_TO_INT,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -86,32 +91,8 @@ OUTPUT_CSV_PATH = OUTPUT_DIR / "llm_motorscore_results.csv"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# LOOKUP TABLES  (mirrors motor_scores.py exactly)
+# LOOKUP HELPERS  (thin wrappers around tables imported from motor_scores.py)
 # ─────────────────────────────────────────────────────────────────────────────
-
-POSSIBLE_MILESTONES_BY_AGE_GMFCS: dict[int, dict[int, int]] = {
-    1: {1: 12, 2: 11, 3:  9, 4:  7, 5:  4},
-    2: {1: 19, 2: 17, 3: 13, 4:  9, 5:  5},
-    3: {1: 27, 2: 23, 3: 16, 4: 11, 5:  6},
-    4: {1: 35, 2: 29, 3: 18, 4: 12, 5:  7},
-}
-
-N_NAMED_BY_AGE_GMFCS: dict[int, dict[int, int]] = {
-    1: {1:  9, 2:  9, 3:  8, 4:  7, 5:  5},
-    2: {1: 16, 2: 16, 3: 14, 4: 11, 5:  7},
-    3: {1: 17, 2: 17, 3: 15, 4: 11, 5:  8},
-    4: {1: 18, 2: 18, 3: 16, 4: 11, 5:  8},
-}
-
-_GMFCS_STR_TO_INT: dict[str, int] = {
-    "Level I – Walks without limitations": 1,
-    "Level II – Walks with some limitations": 2,
-    "Level III – Walks with assistive devices": 3,
-    "Level IV – Limited mobility, primarily uses a wheelchair": 4,
-    "Level V – Severe limitations, needs full assistance for mobility": 5,
-    "Not sure / Don't know": 3,
-}
-
 
 def _gmfcs_int_from_str(gmfcs_str: str | None) -> int:
     return _GMFCS_STR_TO_INT.get(gmfcs_str or "", 3)
