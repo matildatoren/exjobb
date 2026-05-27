@@ -23,6 +23,15 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import polars as pl
 
+plt.rcParams.update({
+    "font.size":        13,
+    "axes.titlesize":   16,
+    "axes.labelsize":   14,
+    "xtick.labelsize":  12,
+    "ytick.labelsize":  12,
+    "legend.fontsize":  12,
+})
+
 SRC = Path(__file__).resolve().parents[1]
 sys.path.append(str(SRC))
 
@@ -39,39 +48,49 @@ FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 # ════════════════════════════════════════════════════════════════════════════
 
 GROUP_A: list[str] = [
-    "771d12c3-bc1a-4a97-ad27-00d35b24f87e",
-    "e30d335e-3a7a-484d-951d-f8e3f17ccfb3",
-    "df67e7ea-0b50-408b-9342-4c29d0efa839",
+    "e0129e7b-c90f-4f49-87d3-6987eb577cdb",
+    "fcdc7e60-1c2f-4178-bafd-db1d42e869ee",
+    "498a4d90-77c6-41b2-ad39-517a2c2a9702",
+    "f1856ef8-2fe0-480d-9635-cfc0be308458",
+    "4c89ca0a-f5c3-4b7b-96be-a7919c679303",
+    "c0990a55-916e-47ba-b29a-aee83d9f33c9",
+    "52dac13b-a335-449d-a7db-a58e40b5e213",
+    "578adb11-a12f-4121-a567-afe67c25640b",
+    "ee9e6fc1-a9d3-4f45-aa0e-01723ebb2930",
+    "6e7aeec2-2846-433d-a4ac-0e753da08530",
+    "47a9e4ae-8d91-4070-ae18-f2d9af891299",
+    "1d0afd8d-6945-488a-964c-724e95db6696",
+    "d2703a20-7b4a-4624-b31a-306eebe4caa0",
+    "f9231c8d-2ade-4c0e-a878-a9524ccc3d65",
+    "1019fb0a-480d-4bef-b8f9-493b9dfe253b",
+    "d87153c9-75b3-4305-99a4-42abc0366651",
+    "cd26a009-6e51-4372-b151-b7d2bb8b7183",
+    "3c1f5e61-56fd-4ac3-af9e-0d6fe054ddb7",
+    "42475b28-2dfd-4114-ac53-d8619881dd2f",
+    "44cd783c-b33d-4553-89cd-2a73b59e1982",
+    "c8f4ec50-18b6-47ed-92a3-919da180a10d",
+    "16f3f961-07a2-4099-8498-1bad9c2faa19",
     "30302f7a-c470-47bf-8f0e-d104b3065d99",
-    "1950325f-99da-47b4-b49d-735253ba0aaa",
-    "8dba1f55-9e79-4e62-90c3-02e9609d3feb",
-    "65ab3206-7371-4471-845c-6d238050494f",
-    "0a584ba1-cdf4-4251-9168-5f8ccc0240e3",
+    
 ]
 
 GROUP_B: list[str] = [
-    "cd26a009-6e51-4372-b151-b7d2bb8b7183",
-    "c0990a55-916e-47ba-b29a-aee83d9f33c9",
-    "c8f4ec50-18b6-47ed-92a3-919da180a10d",
-    "44cd783c-b33d-4553-89cd-2a73b59e1982",
-    "16f3f961-07a2-4099-8498-1bad9c2faa19",
-    "7e42b31a-c597-4418-9bf6-a8c3286d049f",
-    "578adb11-a12f-4121-a567-afe67c25640b",
-    "f9231c8d-2ade-4c0e-a878-a9524ccc3d65",
-    "6e7aeec2-2846-433d-a4ac-0e753da08530",
-    "1d0afd8d-6945-488a-964c-724e95db6696",
-    "1019fb0a-480d-4bef-b8f9-493b9dfe253b",
-    "d2703a20-7b4a-4624-b31a-306eebe4caa0",
-    "f1856ef8-2fe0-480d-9635-cfc0be308458",
+    "1950325f-99da-47b4-b49d-735253ba0aaa",
     "89e4bf27-9a6f-45e8-a415-ef53f23f7931",
+    "7e68f3b3-509b-4352-8eb1-400c9407ac9b",
+    "7e42b31a-c597-4418-9bf6-a8c3286d049f",
+    "65ab3206-7371-4471-845c-6d238050494f",
+    "771d12c3-bc1a-4a97-ad27-00d35b24f87e",
+    "8dba1f55-9e79-4e62-90c3-02e9609d3feb",
+    "4be3b41c-a0b4-4e7b-ae49-896b37ea2052",
+    "e30d335e-3a7a-484d-951d-f8e3f17ccfb3",
+    "df67e7ea-0b50-408b-9342-4c29d0efa839",
+    "0a584ba1-cdf4-4251-9168-5f8ccc0240e3",
+
 ]
 
 GROUP_C: list[str] = [
-        "42475b28-2dfd-4114-ac53-d8619881dd2f",
-        "7e68f3b3-509b-4352-8eb1-400c9407ac9b",
-        "4be3b41c-a0b4-4e7b-ae49-896b37ea2052",
-        "52dac13b-a335-449d-a7db-a58e40b5e213",
-        "4c89ca0a-f5c3-4b7b-96be-a7919c679303",
+
 ]
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -216,7 +235,7 @@ def plot_tables(
         colWidths=col_widths,
     )
     table1.auto_set_font_size(False)
-    table1.set_fontsize(11)
+    table1.set_fontsize(13)
     table1.scale(1, 1.6)
 
     for j, color in enumerate(colors):
@@ -224,10 +243,10 @@ def plot_tables(
         cell.set_facecolor(color + "33")   # light tint
 
     ax1.set_title("Intensive Neurohabilitation Training Participation",
-                  fontsize=13, fontweight="bold", pad=12)
+                  fontsize=16, fontweight="bold", pad=12)
     plt.tight_layout()
     p1 = FIGURES_DIR / "table_intensive_participation.png"
-    fig1.savefig(p1, dpi=150, bbox_inches="tight")
+    fig1.savefig(p1, dpi=300, bbox_inches="tight")
     print(f"  Saved: {p1.name}")
     plt.show()
 
@@ -254,7 +273,7 @@ def plot_tables(
         colWidths=col_w,
     )
     table2.auto_set_font_size(False)
-    table2.set_fontsize(10)
+    table2.set_fontsize(12)
     table2.scale(1, 1.5)
 
     # Color header cells per group
@@ -262,10 +281,10 @@ def plot_tables(
         table2[0, j + 1].set_facecolor(color + "55")
 
     ax2.set_title("Average Training Hours per Therapy Category (per participant per year)",
-                  fontsize=12, fontweight="bold", pad=12)
+                  fontsize=16, fontweight="bold", pad=12)
     plt.tight_layout()
     p2 = FIGURES_DIR / "table_category_hours.png"
-    fig2.savefig(p2, dpi=150, bbox_inches="tight")
+    fig2.savefig(p2, dpi=300, bbox_inches="tight")
     print(f"  Saved: {p2.name}")
     plt.show()
 
@@ -289,17 +308,17 @@ def plot_tables(
         colWidths=col_w3,
     )
     table3.auto_set_font_size(False)
-    table3.set_fontsize(10)
+    table3.set_fontsize(12)
     table3.scale(1, 1.6)
 
     for j, color in enumerate(colors):
         table3[0, j + 1].set_facecolor(color + "55")
 
     ax3.set_title("Overall Average Training Hours per Year (per participant)",
-                  fontsize=12, fontweight="bold", pad=12)
+                  fontsize=16, fontweight="bold", pad=12)
     plt.tight_layout()
     p3 = FIGURES_DIR / "table_overall_hours.png"
-    fig3.savefig(p3, dpi=150, bbox_inches="tight")
+    fig3.savefig(p3, dpi=300, bbox_inches="tight")
     print(f"  Saved: {p3.name}")
     plt.show()
 

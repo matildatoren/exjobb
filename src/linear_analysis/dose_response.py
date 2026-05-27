@@ -4,6 +4,15 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from pathlib import Path
+
+plt.rcParams.update({
+    "font.size":        13,
+    "axes.titlesize":   16,
+    "axes.labelsize":   14,
+    "xtick.labelsize":  12,
+    "ytick.labelsize":  12,
+    "legend.fontsize":  12,
+})
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.pipeline import make_pipeline
@@ -18,35 +27,40 @@ FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
 CONFIG = {
     "filter_ids": [
-        "c0990a55-916e-47ba-b29a-aee83d9f33c9",
-        "65ab3206-7371-4471-845c-6d238050494f",
-        "c8f4ec50-18b6-47ed-92a3-919da180a10d",
-        "8dba1f55-9e79-4e62-90c3-02e9609d3feb",
-        "f1856ef8-2fe0-480d-9635-cfc0be308458",
-        "771d12c3-bc1a-4a97-ad27-00d35b24f87e",
-        "1019fb0a-480d-4bef-b8f9-493b9dfe253b",
-        "6e7aeec2-2846-433d-a4ac-0e753da08530",
-        "e30d335e-3a7a-484d-951d-f8e3f17ccfb3",
-        "578adb11-a12f-4121-a567-afe67c25640b",
-        "0a584ba1-cdf4-4251-9168-5f8ccc0240e3",
-        "7e42b31a-c597-4418-9bf6-a8c3286d049f",
-        "89e4bf27-9a6f-45e8-a415-ef53f23f7931",
-        "16f3f961-07a2-4099-8498-1bad9c2faa19",
-        "44cd783c-b33d-4553-89cd-2a73b59e1982",
-        "d2703a20-7b4a-4624-b31a-306eebe4caa0",
-        "1d0afd8d-6945-488a-964c-724e95db6696",
-        "f9231c8d-2ade-4c0e-a878-a9524ccc3d65",
-        "cd26a009-6e51-4372-b151-b7d2bb8b7183",
-        "df67e7ea-0b50-408b-9342-4c29d0efa839",
-        "30302f7a-c470-47bf-8f0e-d104b3065d99",
-        "1950325f-99da-47b4-b49d-735253ba0aaa",
-        "42475b28-2dfd-4114-ac53-d8619881dd2f",
-        "7e68f3b3-509b-4352-8eb1-400c9407ac9b",
-        "4be3b41c-a0b4-4e7b-ae49-896b37ea2052",
-        "52dac13b-a335-449d-a7db-a58e40b5e213",
-        "ee9e6fc1-a9d3-4f45-aa0e-01723ebb2930",
-        "4c89ca0a-f5c3-4b7b-96be-a7919c679303",
-        "fcdc7e60-1c2f-4178-bafd-db1d42e869ee",
+    "e0129e7b-c90f-4f49-87d3-6987eb577cdb",
+    "d87153c9-75b3-4305-99a4-42abc0366651",
+    "47a9e4ae-8d91-4070-ae18-f2d9af891299",
+    "1950325f-99da-47b4-b49d-735253ba0aaa",
+    "ee9e6fc1-a9d3-4f45-aa0e-01723ebb2930",
+    "498a4d90-77c6-41b2-ad39-517a2c2a9702",
+    "fcdc7e60-1c2f-4178-bafd-db1d42e869ee",
+    "52dac13b-a335-449d-a7db-a58e40b5e213",
+    "42475b28-2dfd-4114-ac53-d8619881dd2f",
+    "7e68f3b3-509b-4352-8eb1-400c9407ac9b",
+    "4be3b41c-a0b4-4e7b-ae49-896b37ea2052",
+    "30302f7a-c470-47bf-8f0e-d104b3065d99",
+    "c8f4ec50-18b6-47ed-92a3-919da180a10d",
+    "8dba1f55-9e79-4e62-90c3-02e9609d3feb",
+    "d2703a20-7b4a-4624-b31a-306eebe4caa0",
+    "f1856ef8-2fe0-480d-9635-cfc0be308458",
+    "771d12c3-bc1a-4a97-ad27-00d35b24f87e",
+    "1d0afd8d-6945-488a-964c-724e95db6696",
+    "1019fb0a-480d-4bef-b8f9-493b9dfe253b",
+    "6e7aeec2-2846-433d-a4ac-0e753da08530",
+    "e30d335e-3a7a-484d-951d-f8e3f17ccfb3",
+    "4c89ca0a-f5c3-4b7b-96be-a7919c679303",
+    "578adb11-a12f-4121-a567-afe67c25640b",
+    "0a584ba1-cdf4-4251-9168-5f8ccc0240e3",
+    "7e42b31a-c597-4418-9bf6-a8c3286d049f",
+    "3c1f5e61-56fd-4ac3-af9e-0d6fe054ddb7",
+    "f9231c8d-2ade-4c0e-a878-a9524ccc3d65",
+    "df67e7ea-0b50-408b-9342-4c29d0efa839",
+    "16f3f961-07a2-4099-8498-1bad9c2faa19",
+    "44cd783c-b33d-4553-89cd-2a73b59e1982",
+    "cd26a009-6e51-4372-b151-b7d2bb8b7183",
+    "c0990a55-916e-47ba-b29a-aee83d9f33c9",
+    "89e4bf27-9a6f-45e8-a415-ef53f23f7931",
+    "65ab3206-7371-4471-845c-6d238050494f",
     ],
 
     # Output — vilket/vilka motorscores att analysera
@@ -60,18 +74,18 @@ CONFIG = {
             "delta_col": "delta_impairment_score_setvalue",
             "title":     "Impairment Score",
         },
-        "simplified": {
-            "delta_col": "delta_motorical_score",
-            "title":     "Simplified Score",
+        "combined": {
+            "delta_col": "delta_combined_score",
+            "title":     "Mean Score",
         },
-        "presence": {
-            "delta_col": "delta_presence_score",
-            "title":     "Presence Score",
-        },
-        "severity": {
-            "delta_col": "delta_severity_score",
-            "title":     "Severity Score",
-        },
+        # "presence": {
+        #     "delta_col": "delta_presence_score",
+        #     "title":     "Presence Score",
+        # },
+        # "severity": {
+        #     "delta_col": "delta_severity_score",
+        #     "title":     "Severity Score",
+        # },
     },
 
     # Input — träningskomponenter att inkludera i komponentanalysen
@@ -110,7 +124,6 @@ def _get_treatment_cols(master_df: pd.DataFrame) -> list[str]:
         if c.startswith("med_") and c.lower() not in exclude
     ]
 
-
 def build_analysis_df(
     master: pl.DataFrame,
     delta_col: str,
@@ -121,6 +134,9 @@ def build_analysis_df(
     Returns a pandas DataFrame with:
       delta_score, hour components, active_total_hours, med_* columns.
     """
+    if delta_col not in master.columns:
+        raise ValueError(f"Column '{delta_col}' not found in master table — skipping.")
+
     overall = CONFIG["overall_feature"]
 
     keep = list(dict.fromkeys(
@@ -130,7 +146,7 @@ def build_analysis_df(
         + [c for c in master.columns if c.startswith("med_")]
     ))
 
-    keep = [c for c in keep if c in master.columns]   # guard against missing cols
+    keep = [c for c in keep if c in master.columns]
 
     df = (
         master
@@ -310,7 +326,7 @@ def plot_training_components(
     n_cols  = 2
     n_rows  = (n + n_cols - 1) // n_cols
 
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 5 * n_rows))
+    _, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 5 * n_rows))
     axes = axes.flatten()
 
     for i, r in enumerate(panels):
@@ -329,7 +345,7 @@ def plot_training_components(
             ax.plot(x_range, model.predict(x_range_df), color="orange", linewidth=2)
 
         ax.axhline(0, color="gray", linewidth=0.8, linestyle=":")
-        ax.set_xlabel("Training dose (hours / year)", fontsize=13)
+        ax.set_xlabel("Training dose (log hours / year)", fontsize=13)
         ax.set_ylabel(f"Δ {title}", fontsize=13)
         ax.set_title(r["label"], fontsize=15)
         ax.tick_params(axis="both", labelsize=12)
@@ -343,9 +359,10 @@ def plot_training_components(
     for j in range(len(panels), 4):
         axes[j].set_visible(False)
 
-    plt.suptitle(f"Motorscore improvement by Training-category — {title}", fontsize=16)
+    plt.suptitle(f"Motor Score Improvement by Training Category — {title}", fontsize=18)
     plt.tight_layout()
-    plt.savefig(FIGURES_DIR / filename, dpi=150)
+    plt.savefig(FIGURES_DIR / filename, dpi=300, bbox_inches="tight")
+    plt.close()
     print(f"Saved: {filename}")
 
 
@@ -362,7 +379,7 @@ def plot_treatment_effects(
         return
 
     n_cols = len(treatment_cols)
-    fig, axes = plt.subplots(1, n_cols, figsize=(5 * n_cols, 5), sharey=True)
+    _, axes = plt.subplots(1, n_cols, figsize=(5 * n_cols, 5), sharey=True)
     if n_cols == 1:
         axes = [axes]
 
@@ -393,9 +410,10 @@ def plot_treatment_effects(
         )
 
     axes[0].set_ylabel(f"Δ {title}", fontsize=13)
-    plt.suptitle(f"Score Change by Medical Treatment — {title}", fontsize=16)
+    plt.suptitle(f"Score Change by Medical Treatment — {title}", fontsize=18)
     plt.tight_layout()
-    plt.savefig(FIGURES_DIR / filename, dpi=150)
+    plt.savefig(FIGURES_DIR / filename, dpi=300, bbox_inches="tight")
+    plt.close()
     print(f"Saved: {filename}")
 
 
@@ -415,7 +433,7 @@ def plot_overall_dose_response(
     x_range    = np.linspace(X[feature].min(), X[feature].max(), 200).reshape(-1, 1)
     x_range_df = pd.DataFrame(x_range, columns=[feature])
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+    _, ax = plt.subplots(figsize=(10, 6))
     ax.scatter(X[feature], y, alpha=0.5, color="steelblue", s=30, label="Observed")
     ax.plot(
         x_range, linear_model.predict(x_range_df),
@@ -431,11 +449,10 @@ def plot_overall_dose_response(
     ax.axhline(0, color="gray", linewidth=0.8, linestyle=":")
     ax.set_xlabel("Total active hours / year", fontsize=13)
     ax.set_ylabel(f"Δ {title}", fontsize=13)
-    ax.set_title(f"Overall Dose-Response: Active Hours vs {title} Change", fontsize=15)
-    ax.tick_params(axis="both", labelsize=12)
-    ax.legend(fontsize=12)
+    ax.set_title(f"Overall Dose-Response: Active Hours vs {title} Change", fontsize=16)
+    ax.legend()
     plt.tight_layout()
-    plt.savefig(FIGURES_DIR / filename, dpi=150)
+    plt.savefig(FIGURES_DIR / filename, dpi=300, bbox_inches="tight")
     print(f"Saved: {filename}")
 
 
@@ -454,7 +471,11 @@ if __name__ == "__main__":
     master = build_master_feature_table(data)
 
     for key, cfg in CONFIG["scores"].items():
-        results = run_analysis(master, delta_col=cfg["delta_col"])
+        try:
+            results = run_analysis(master, delta_col=cfg["delta_col"])
+        except ValueError as e:
+            print(f"  Skipping '{key}': {e}")
+            continue
 
         print_summary(results, title=cfg["title"])
 

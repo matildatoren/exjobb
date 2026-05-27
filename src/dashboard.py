@@ -491,7 +491,7 @@ with tab1:
     st.subheader("Participants (names)")
 
     cols_to_show = []
-    for c in ["nick_name", "country", "completed", "created_at", "id"]:
+    for c in ["nick_name", "gmfcs_lvl", "country", "completed", "created_at", "id"]:
         if c in intro.columns:
             cols_to_show.append(c)
 

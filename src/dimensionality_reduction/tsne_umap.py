@@ -11,6 +11,15 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.manifold import TSNE
 import umap
 
+plt.rcParams.update({
+    "font.size":        13,
+    "axes.titlesize":   16,
+    "axes.labelsize":   14,
+    "xtick.labelsize":  12,
+    "ytick.labelsize":  12,
+    "legend.fontsize":  12,
+})
+
 FIGURES_DIR = Path(__file__).resolve().parents[2] / "outputs" / "tsne_umap"
 FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -34,35 +43,40 @@ CLUSTER_COLORS = {
 # ════════════════════════════════════════════════════════════════════════════
 
 FILTER_IDS = [
-        "c0990a55-916e-47ba-b29a-aee83d9f33c9",
-        "65ab3206-7371-4471-845c-6d238050494f",
-        "c8f4ec50-18b6-47ed-92a3-919da180a10d",
-        "8dba1f55-9e79-4e62-90c3-02e9609d3feb",
-        "f1856ef8-2fe0-480d-9635-cfc0be308458",
-        "771d12c3-bc1a-4a97-ad27-00d35b24f87e",
-        "1019fb0a-480d-4bef-b8f9-493b9dfe253b",
-        "6e7aeec2-2846-433d-a4ac-0e753da08530",
-        "e30d335e-3a7a-484d-951d-f8e3f17ccfb3",
-        "578adb11-a12f-4121-a567-afe67c25640b",
-        "0a584ba1-cdf4-4251-9168-5f8ccc0240e3",
-        "7e42b31a-c597-4418-9bf6-a8c3286d049f",
-        "89e4bf27-9a6f-45e8-a415-ef53f23f7931",
-        "16f3f961-07a2-4099-8498-1bad9c2faa19",
-        "44cd783c-b33d-4553-89cd-2a73b59e1982",
-        "d2703a20-7b4a-4624-b31a-306eebe4caa0",
-        "1d0afd8d-6945-488a-964c-724e95db6696",
-        "f9231c8d-2ade-4c0e-a878-a9524ccc3d65",
-        "cd26a009-6e51-4372-b151-b7d2bb8b7183",
-        "df67e7ea-0b50-408b-9342-4c29d0efa839",
-        "30302f7a-c470-47bf-8f0e-d104b3065d99",
-        "1950325f-99da-47b4-b49d-735253ba0aaa",
-        "42475b28-2dfd-4114-ac53-d8619881dd2f",
-        "7e68f3b3-509b-4352-8eb1-400c9407ac9b",
-        "4be3b41c-a0b4-4e7b-ae49-896b37ea2052",
-        "52dac13b-a335-449d-a7db-a58e40b5e213",
-        "ee9e6fc1-a9d3-4f45-aa0e-01723ebb2930",
-        "4c89ca0a-f5c3-4b7b-96be-a7919c679303",
-        "fcdc7e60-1c2f-4178-bafd-db1d42e869ee",
+    "e0129e7b-c90f-4f49-87d3-6987eb577cdb",
+    "d87153c9-75b3-4305-99a4-42abc0366651",
+    "47a9e4ae-8d91-4070-ae18-f2d9af891299",
+    "1950325f-99da-47b4-b49d-735253ba0aaa",
+    "ee9e6fc1-a9d3-4f45-aa0e-01723ebb2930",
+    "fcdc7e60-1c2f-4178-bafd-db1d42e869ee",
+    "52dac13b-a335-449d-a7db-a58e40b5e213",
+    "42475b28-2dfd-4114-ac53-d8619881dd2f",
+    "7e68f3b3-509b-4352-8eb1-400c9407ac9b",
+    "4be3b41c-a0b4-4e7b-ae49-896b37ea2052",
+    "498a4d90-77c6-41b2-ad39-517a2c2a9702",
+    "30302f7a-c470-47bf-8f0e-d104b3065d99",
+    "c8f4ec50-18b6-47ed-92a3-919da180a10d",
+    "8dba1f55-9e79-4e62-90c3-02e9609d3feb",
+    "d2703a20-7b4a-4624-b31a-306eebe4caa0",
+    "f1856ef8-2fe0-480d-9635-cfc0be308458",
+    "771d12c3-bc1a-4a97-ad27-00d35b24f87e",
+    "1d0afd8d-6945-488a-964c-724e95db6696",
+    "1019fb0a-480d-4bef-b8f9-493b9dfe253b",
+    "6e7aeec2-2846-433d-a4ac-0e753da08530",
+    "e30d335e-3a7a-484d-951d-f8e3f17ccfb3",
+    "4c89ca0a-f5c3-4b7b-96be-a7919c679303",
+    "578adb11-a12f-4121-a567-afe67c25640b",
+    "0a584ba1-cdf4-4251-9168-5f8ccc0240e3",
+    "7e42b31a-c597-4418-9bf6-a8c3286d049f",
+    "3c1f5e61-56fd-4ac3-af9e-0d6fe054ddb7",
+    "f9231c8d-2ade-4c0e-a878-a9524ccc3d65",
+    "df67e7ea-0b50-408b-9342-4c29d0efa839",
+    "16f3f961-07a2-4099-8498-1bad9c2faa19",
+    "44cd783c-b33d-4553-89cd-2a73b59e1982",
+    "cd26a009-6e51-4372-b151-b7d2bb8b7183",
+    "c0990a55-916e-47ba-b29a-aee83d9f33c9",
+    "89e4bf27-9a6f-45e8-a415-ef53f23f7931",
+    "65ab3206-7371-4471-845c-6d238050494f",
 ]
 
 # ── What to analyse ──────────────────────────────────────────────────────────
@@ -92,6 +106,13 @@ FILTER_IDS = [
 #     "gmfcs_int"
 
 ANALYSES = [
+    {
+        "cols":       ["delta_milestone_score_setvalue", "delta_impairment_score_setvalue", "delta_combined_score_setvalue"],
+        "ages":       [2, 3, 4],
+        "title":      "t-SNE & UMAP — Δ Milestone + Δ Impairment score + Δ Combined score (setvalue)",
+        "filename":   "tsne_umap_delta_all_setvalue.png",
+        "n_clusters": 2,
+    },
     {
         "cols":       ["delta_milestone_score_setvalue", "delta_impairment_score_setvalue"],
         "ages":       [2, 3, 4],
@@ -135,19 +156,20 @@ ANALYSES = [
         "n_clusters": 2,
     },
     {
+        "cols":       ["delta_combined_score_setvalue"],
+        "ages":       [2, 3, 4],
+        "title":      "t-SNE & UMAP — Δ Average score trajectory (setvalue)",
+        "filename":   "tsne_umap_delta_combined.png",
+        "n_clusters": 2,
+    },
+    {
         "cols":       ["combined_score_setvalue"],
         "ages":       [1, 2, 3, 4],
         "title":      "t-SNE & UMAP — Combined score trajectory (setvalue)",
         "filename":   "tsne_umap_combined.png",
         "n_clusters": 2,
     },
-        {
-        "cols":       ["delta_combined_score_setvalue"],
-        "ages":       [2, 3, 4],
-        "title":      "t-SNE & UMAP — Δ Combined score trajectory (setvalue)",
-        "filename":   "tsne_umap_delta_combined.png",
-        "n_clusters": 2,
-    },
+
 ]
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -177,7 +199,7 @@ def _add_gmfcs_legend(ax):
         Patch(facecolor=color, label=f"GMFCS {lvl}")
         for lvl, color in GMFCS_COLORS.items()
     ]
-    ax.legend(handles=legend_elements, fontsize=7, loc="lower right")
+    ax.legend(handles=legend_elements, loc="lower right")
 
 
 def _add_cluster_legend(ax, n_clusters):
@@ -185,7 +207,7 @@ def _add_cluster_legend(ax, n_clusters):
         Patch(facecolor=CLUSTER_COLORS[k], label=f"Cluster {k+1}")
         for k in range(n_clusters)
     ]
-    ax.legend(handles=legend_elements, fontsize=7, loc="lower right")
+    ax.legend(handles=legend_elements, loc="lower right")
 
 
 def _scatter_panel(ax, X_2d, ids, gmfcs, title, xlabel, ylabel, cluster_labels=None, n_clusters=2):
@@ -322,9 +344,9 @@ def run_tsne_umap(
                        xlabel="Dim 1", ylabel="Dim 2",
                        cluster_labels=cl, n_clusters=n_clusters)
 
-    plt.suptitle(suptitle, fontsize=13)
+    plt.suptitle(suptitle, fontsize=18)
     plt.tight_layout()
-    plt.savefig(FIGURES_DIR / filename, dpi=150)
+    plt.savefig(FIGURES_DIR / filename, dpi=300, bbox_inches="tight")
     print(f"  Saved: {filename}")
     plt.close()
 

@@ -23,6 +23,15 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import shap
 
+plt.rcParams.update({
+    "font.size":        13,
+    "axes.titlesize":   16,
+    "axes.labelsize":   14,
+    "xtick.labelsize":  12,
+    "ytick.labelsize":  12,
+    "legend.fontsize":  12,
+})
+
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import cross_val_score, LeaveOneOut
@@ -40,37 +49,54 @@ FIGURES_DIR = Path(__file__).resolve().parents[2] / "outputs" / "model_compariso
 FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
 FILTER_INTRODUCTORY_IDS = [
-        "c0990a55-916e-47ba-b29a-aee83d9f33c9",
-        "65ab3206-7371-4471-845c-6d238050494f",
-        "c8f4ec50-18b6-47ed-92a3-919da180a10d",
-        "8dba1f55-9e79-4e62-90c3-02e9609d3feb",
-        "f1856ef8-2fe0-480d-9635-cfc0be308458",
-        "771d12c3-bc1a-4a97-ad27-00d35b24f87e",
-        "1019fb0a-480d-4bef-b8f9-493b9dfe253b",
-        "6e7aeec2-2846-433d-a4ac-0e753da08530",
-        "e30d335e-3a7a-484d-951d-f8e3f17ccfb3",
-        "578adb11-a12f-4121-a567-afe67c25640b",
-        "0a584ba1-cdf4-4251-9168-5f8ccc0240e3",
-        "7e42b31a-c597-4418-9bf6-a8c3286d049f",
-        "89e4bf27-9a6f-45e8-a415-ef53f23f7931",
-        "16f3f961-07a2-4099-8498-1bad9c2faa19",
-        "44cd783c-b33d-4553-89cd-2a73b59e1982",
-        "d2703a20-7b4a-4624-b31a-306eebe4caa0",
-        "1d0afd8d-6945-488a-964c-724e95db6696",
-        "f9231c8d-2ade-4c0e-a878-a9524ccc3d65",
-        "cd26a009-6e51-4372-b151-b7d2bb8b7183",
-        "df67e7ea-0b50-408b-9342-4c29d0efa839",
-        "30302f7a-c470-47bf-8f0e-d104b3065d99",
-        "1950325f-99da-47b4-b49d-735253ba0aaa",
-        "42475b28-2dfd-4114-ac53-d8619881dd2f",
-        "7e68f3b3-509b-4352-8eb1-400c9407ac9b",
-        "4be3b41c-a0b4-4e7b-ae49-896b37ea2052",
-        "52dac13b-a335-449d-a7db-a58e40b5e213",
-        "ee9e6fc1-a9d3-4f45-aa0e-01723ebb2930",
-        "4c89ca0a-f5c3-4b7b-96be-a7919c679303",
+    "498a4d90-77c6-41b2-ad39-517a2c2a9702",
+    "e0129e7b-c90f-4f49-87d3-6987eb577cdb",
+    "d87153c9-75b3-4305-99a4-42abc0366651",
+    "47a9e4ae-8d91-4070-ae18-f2d9af891299",
+    "fcdc7e60-1c2f-4178-bafd-db1d42e869ee",
+    "ee9e6fc1-a9d3-4f45-aa0e-01723ebb2930",
+    "52dac13b-a335-449d-a7db-a58e40b5e213",
+    "42475b28-2dfd-4114-ac53-d8619881dd2f",
+    "7e68f3b3-509b-4352-8eb1-400c9407ac9b",
+    "4be3b41c-a0b4-4e7b-ae49-896b37ea2052",
+    "1950325f-99da-47b4-b49d-735253ba0aaa",
+    "30302f7a-c470-47bf-8f0e-d104b3065d99",
+    "c8f4ec50-18b6-47ed-92a3-919da180a10d",
+    "8dba1f55-9e79-4e62-90c3-02e9609d3feb",
+    "d2703a20-7b4a-4624-b31a-306eebe4caa0",
+    "f1856ef8-2fe0-480d-9635-cfc0be308458",
+    "771d12c3-bc1a-4a97-ad27-00d35b24f87e",
+    "1d0afd8d-6945-488a-964c-724e95db6696",
+    "1019fb0a-480d-4bef-b8f9-493b9dfe253b",
+    "6e7aeec2-2846-433d-a4ac-0e753da08530",
+    "e30d335e-3a7a-484d-951d-f8e3f17ccfb3",
+    "4c89ca0a-f5c3-4b7b-96be-a7919c679303",
+    "578adb11-a12f-4121-a567-afe67c25640b",
+    "0a584ba1-cdf4-4251-9168-5f8ccc0240e3",
+    "7e42b31a-c597-4418-9bf6-a8c3286d049f",
+    "3c1f5e61-56fd-4ac3-af9e-0d6fe054ddb7",
+    "f9231c8d-2ade-4c0e-a878-a9524ccc3d65",
+    "df67e7ea-0b50-408b-9342-4c29d0efa839",
+    "16f3f961-07a2-4099-8498-1bad9c2faa19",
+    "44cd783c-b33d-4553-89cd-2a73b59e1982",
+    "cd26a009-6e51-4372-b151-b7d2bb8b7183",
+    "c0990a55-916e-47ba-b29a-aee83d9f33c9",
+    "89e4bf27-9a6f-45e8-a415-ef53f23f7931",
+    "65ab3206-7371-4471-845c-6d238050494f",
 ]
 
-TARGET = "delta_milestone_score_setvalue"
+TARGET       = "delta_milestone_score_setvalue"
+TARGET_LABEL = "Δ Milestone Score"
+
+FEATURE_LABELS = {
+    "has_any_medical_treatment":      "Any Medical Treatment",
+    "log_total_home_training_hours":  "Home Training (log hours)",
+    "log_total_other_training_hours": "Other Training (log hours)",
+    "log_neurohab_hours":             "Intensive Therapy (log hours)",
+    "age":                            "Age",
+    "gmfcs_int":                      "GMFCS Level",
+}
+
 TRAINING_FEATURES = [
     #"age",
     #"gmfcs_int",
@@ -156,13 +182,13 @@ def plot_predicted_vs_actual(result: dict):
     ax.scatter(y, y_pred, alpha=0.6, color="steelblue", edgecolors="white", s=60)
     lims = [min(y.min(), y_pred.min()) - 0.05, max(y.max(), y_pred.max()) + 0.05]
     ax.plot(lims, lims, "k--", linewidth=1, label="Perfect fit")
-    ax.set_xlabel("Actual Δ milestone score (setvalue)")
-    ax.set_ylabel("Predicted Δ milestone score (setvalue)")
-    ax.set_title(f"{result['name']} — Predicted vs Actual\n(train R² = {result['train_r2']:.3f})")
+    ax.set_xlabel(f"Actual {TARGET_LABEL}")
+    ax.set_ylabel(f"Predicted {TARGET_LABEL}")
+    ax.set_title(f"{result['name']} — Predicted vs Actual\n(Train R² = {result['train_r2']:.3f})")
     ax.legend()
     plt.tight_layout()
     path = FIGURES_DIR / f"pred_vs_actual_{result['name'].replace(' ', '_')}.png"
-    plt.savefig(path, dpi=150)
+    plt.savefig(path, dpi=300, bbox_inches="tight")
     print(f"  Saved: {path.name}")
     plt.show()
 
@@ -183,7 +209,7 @@ def plot_feature_importance(result: dict):
     ax.set_xlabel("Importance")
     plt.tight_layout()
     path = FIGURES_DIR / f"feature_importance_{result['name'].replace(' ', '_')}.png"
-    plt.savefig(path, dpi=150)
+    plt.savefig(path, dpi=300, bbox_inches="tight")
     print(f"  Saved: {path.name}")
     plt.show()
 
@@ -202,10 +228,10 @@ def plot_shap(result: dict):
 
     plt.figure()
     shap.summary_plot(shap_values, X, plot_type="dot", max_display=10, show=False)
-    plt.title(f"{result['name']} — SHAP Beeswarm")
+    plt.title(f"{result['name']} — SHAP Beeswarm", fontsize=16)
     plt.tight_layout()
     path = FIGURES_DIR / f"shap_{result['name'].replace(' ', '_')}.png"
-    plt.savefig(path, dpi=150, bbox_inches="tight")
+    plt.savefig(path, dpi=300, bbox_inches="tight")
     print(f"  Saved: {path.name}")
     plt.show()
 
@@ -228,16 +254,17 @@ def plot_partial_dependence(result: dict):
             X_copy[col] = val
             preds.append(model.predict(X_copy).mean())
 
+        col_label = FEATURE_LABELS.get(col, col.replace("_", " ").title())
         ax.plot(grid, preds, color="darkorange", linewidth=2)
         ax.axhline(0, color="gray", linewidth=0.8, linestyle=":")
-        ax.set_xlabel(col)
-        ax.set_ylabel("Avg predicted Δ milestone score")
-        ax.set_title(col)
+        ax.set_xlabel(col_label)
+        ax.set_ylabel(f"Avg. Predicted {TARGET_LABEL}")
+        ax.set_title(col_label)
 
-    fig.suptitle(f"{result['name']} — Partial Dependence", fontsize=13)
+    fig.suptitle(f"{result['name']} — Partial Dependence", fontsize=18)
     plt.tight_layout()
     path = FIGURES_DIR / f"partial_dep_{result['name'].replace(' ', '_')}.png"
-    plt.savefig(path, dpi=150)
+    plt.savefig(path, dpi=300, bbox_inches="tight")
     print(f"  Saved: {path.name}")
     plt.show()
 

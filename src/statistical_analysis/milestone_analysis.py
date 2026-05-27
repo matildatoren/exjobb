@@ -28,6 +28,28 @@ import polars as pl
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+plt.rcParams.update({
+    "font.size":        13,
+    "axes.titlesize":   16,
+    "axes.labelsize":   14,
+    "xtick.labelsize":  12,
+    "ytick.labelsize":  12,
+    "legend.fontsize":  12,
+})
+
+FEATURE_LABELS = {
+    "active_total_hours":              "Active Training Hours",
+    "total_home_training_hours":       "Home Training Hours",
+    "neurohab_hours":                  "Intensive Therapy Hours",
+    "total_other_training_hours":      "Other Training Hours",
+    "cat_neurodevelopmental_reflex":   "Neurodevelopmental / Reflex Therapy",
+    "cat_motor_learning_task":         "Motor Learning / Task-oriented Therapy",
+    "cat_technology_assisted":         "Technology-assisted Therapy",
+    "cat_physical_conditioning":       "Physical Conditioning",
+    "cat_complementary":               "Complementary Therapy",
+    "cat_unclassified":                "Unclassified Therapy",
+}
+
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.linear_model import LogisticRegression, RidgeCV
 from sklearn.model_selection import cross_val_predict, cross_val_score
@@ -68,8 +90,8 @@ TARGET_MILESTONES = {
 # Replace with values from clinical literature relevant to your milestone.
 GMFCS_EXPECTED_AGE: dict[int, float | None] = {
     1: 2.0,
-    2: 3.0,
-    3: 3.0,
+    2: 2.5,
+    3: 2.0,
     4: None,
     5: None,  # not expected to achieve independently
 }
@@ -84,34 +106,40 @@ GMFCS_EXPECTED_AGE: dict[int, float | None] = {
 INCLUDE_IDS: list[str] | None = None
 
 INCLUDE_IDS = [
-        "c0990a55-916e-47ba-b29a-aee83d9f33c9",
-        "65ab3206-7371-4471-845c-6d238050494f",
-        "c8f4ec50-18b6-47ed-92a3-919da180a10d",
-        "8dba1f55-9e79-4e62-90c3-02e9609d3feb",
-        "f1856ef8-2fe0-480d-9635-cfc0be308458",
-        "771d12c3-bc1a-4a97-ad27-00d35b24f87e",
-        "1019fb0a-480d-4bef-b8f9-493b9dfe253b",
-        "6e7aeec2-2846-433d-a4ac-0e753da08530",
-        "e30d335e-3a7a-484d-951d-f8e3f17ccfb3",
-        "578adb11-a12f-4121-a567-afe67c25640b",
-        "0a584ba1-cdf4-4251-9168-5f8ccc0240e3",
-        "7e42b31a-c597-4418-9bf6-a8c3286d049f",
-        "89e4bf27-9a6f-45e8-a415-ef53f23f7931",
-        "16f3f961-07a2-4099-8498-1bad9c2faa19",
-        "44cd783c-b33d-4553-89cd-2a73b59e1982",
-        "d2703a20-7b4a-4624-b31a-306eebe4caa0",
-        "1d0afd8d-6945-488a-964c-724e95db6696",
-        "f9231c8d-2ade-4c0e-a878-a9524ccc3d65",
-        "cd26a009-6e51-4372-b151-b7d2bb8b7183",
-        "df67e7ea-0b50-408b-9342-4c29d0efa839",
-        "30302f7a-c470-47bf-8f0e-d104b3065d99",
-        "1950325f-99da-47b4-b49d-735253ba0aaa",
-        "42475b28-2dfd-4114-ac53-d8619881dd2f",
-        "7e68f3b3-509b-4352-8eb1-400c9407ac9b",
-        "4be3b41c-a0b4-4e7b-ae49-896b37ea2052",
-        "52dac13b-a335-449d-a7db-a58e40b5e213",
-        "ee9e6fc1-a9d3-4f45-aa0e-01723ebb2930",
-        "4c89ca0a-f5c3-4b7b-96be-a7919c679303",
+    "498a4d90-77c6-41b2-ad39-517a2c2a9702",
+    "e0129e7b-c90f-4f49-87d3-6987eb577cdb",
+    "d87153c9-75b3-4305-99a4-42abc0366651",
+    "47a9e4ae-8d91-4070-ae18-f2d9af891299",
+    "fcdc7e60-1c2f-4178-bafd-db1d42e869ee",
+    "ee9e6fc1-a9d3-4f45-aa0e-01723ebb2930",
+    "52dac13b-a335-449d-a7db-a58e40b5e213",
+    "42475b28-2dfd-4114-ac53-d8619881dd2f",
+    "7e68f3b3-509b-4352-8eb1-400c9407ac9b",
+    "4be3b41c-a0b4-4e7b-ae49-896b37ea2052",
+    "1950325f-99da-47b4-b49d-735253ba0aaa",
+    "30302f7a-c470-47bf-8f0e-d104b3065d99",
+    "c8f4ec50-18b6-47ed-92a3-919da180a10d",
+    "8dba1f55-9e79-4e62-90c3-02e9609d3feb",
+    "d2703a20-7b4a-4624-b31a-306eebe4caa0",
+    "f1856ef8-2fe0-480d-9635-cfc0be308458",
+    "771d12c3-bc1a-4a97-ad27-00d35b24f87e",
+    "1d0afd8d-6945-488a-964c-724e95db6696",
+    "1019fb0a-480d-4bef-b8f9-493b9dfe253b",
+    "6e7aeec2-2846-433d-a4ac-0e753da08530",
+    "e30d335e-3a7a-484d-951d-f8e3f17ccfb3",
+    "4c89ca0a-f5c3-4b7b-96be-a7919c679303",
+    "578adb11-a12f-4121-a567-afe67c25640b",
+    "0a584ba1-cdf4-4251-9168-5f8ccc0240e3",
+    "7e42b31a-c597-4418-9bf6-a8c3286d049f",
+    "3c1f5e61-56fd-4ac3-af9e-0d6fe054ddb7",
+    "f9231c8d-2ade-4c0e-a878-a9524ccc3d65",
+    "df67e7ea-0b50-408b-9342-4c29d0efa839",
+    "16f3f961-07a2-4099-8498-1bad9c2faa19",
+    "44cd783c-b33d-4553-89cd-2a73b59e1982",
+    "cd26a009-6e51-4372-b151-b7d2bb8b7183",
+    "c0990a55-916e-47ba-b29a-aee83d9f33c9",
+    "89e4bf27-9a6f-45e8-a415-ef53f23f7931",
+    "65ab3206-7371-4471-845c-6d238050494f",
 ]
 # Features used to analyze residuals
 TRAINING_FEATURES = [
@@ -300,10 +328,10 @@ def plot_kaplan_meier(df: pd.DataFrame) -> None:
         kmf.fit(df.loc[mask, "duration"], df.loc[mask, "event"],
                 label=f"GMFCS {int(level)} (n={mask.sum()})")
         kmf.plot_survival_function(ax=ax)
-    ax.set_title("Time to milestone achievement\nby GMFCS level")
+    ax.set_title("Time to Milestone Achievement\nby GMFCS Level")
     ax.set_xlabel("Age bucket")
     ax.set_ylabel("Proportion not yet achieved")
-    ax.legend(fontsize=8)
+    ax.legend()
 
     # — By active_total_hours, median split WITHIN each GMFCS stratum
     ax = axes[1]
@@ -323,14 +351,14 @@ def plot_kaplan_meier(df: pd.DataFrame) -> None:
             kmf = KaplanMeierFitter()
             kmf.fit(df.loc[mask, "duration"], df.loc[mask, "event"], label=f"{label} (n={mask.sum()})")
             kmf.plot_survival_function(ax=ax)
-        ax.set_title("Time to milestone achievement\nby total training hours\n(median split within GMFCS stratum)")
+        ax.set_title("Time to Milestone Achievement\nby Total Training Hours\n(median split within GMFCS stratum)")
         ax.set_xlabel("Age bucket")
         ax.set_ylabel("Proportion not yet achieved")
-        ax.legend(fontsize=8)
+        ax.legend()
 
     plt.tight_layout()
     out = OUTPUT_DIR / "kaplan_meier.png"
-    plt.savefig(out, dpi=150)
+    plt.savefig(out, dpi=300, bbox_inches="tight")
     plt.close()
     print(f"Saved: {out}")
 
@@ -351,12 +379,12 @@ def plot_additional_analysis(df: pd.DataFrame) -> None:
 
     ax.set_xlabel("Predicted age")
     ax.set_ylabel("Observed age")
-    ax.set_title("Observed vs Predicted milestone age")
+    ax.set_title("Observed vs Predicted Milestone Age")
     ax.legend()
 
     plt.tight_layout()
     out = OUTPUT_DIR / "observed_vs_predicted.png"
-    plt.savefig(out, dpi=150)
+    plt.savefig(out, dpi=300, bbox_inches="tight")
     plt.close()
     print(f"Saved: {out}")
 
@@ -375,13 +403,13 @@ def plot_additional_analysis(df: pd.DataFrame) -> None:
         )
 
         ax.axhline(0, linestyle="--", color="black")
-        ax.set_title("Training vs residual\n(negative = earlier than expected)")
-        ax.set_xlabel("Active training hours")
+        ax.set_title("Training vs Residual\n(negative = earlier than expected)")
+        ax.set_xlabel("Active Training Hours")
         ax.set_ylabel("Residual (actual − predicted)")
 
         plt.tight_layout()
         out = OUTPUT_DIR / "residual_vs_training.png"
-        plt.savefig(out, dpi=150)
+        plt.savefig(out, dpi=300, bbox_inches="tight")
         plt.close()
         print(f"Saved: {out}")
 
@@ -392,12 +420,12 @@ def plot_additional_analysis(df: pd.DataFrame) -> None:
 
         sns.histplot(df["active_total_hours"], bins=15, kde=True, ax=ax)
 
-        ax.set_title("Distribution of training hours")
-        ax.set_xlabel("Active training hours")
+        ax.set_title("Distribution of Training Hours")
+        ax.set_xlabel("Active Training Hours")
 
         plt.tight_layout()
         out = OUTPUT_DIR / "training_distribution.png"
-        plt.savefig(out, dpi=150)
+        plt.savefig(out, dpi=300, bbox_inches="tight")
         plt.close()
         print(f"Saved: {out}")
 
@@ -408,13 +436,13 @@ def plot_additional_analysis(df: pd.DataFrame) -> None:
 
         sns.boxplot(x="gmfcs_int", y="duration", data=df, ax=ax)
 
-        ax.set_title("Milestone age by GMFCS level")
-        ax.set_xlabel("GMFCS level")
+        ax.set_title("Milestone Age by GMFCS Level")
+        ax.set_xlabel("GMFCS Level")
         ax.set_ylabel("Age at milestone")
 
         plt.tight_layout()
         out = OUTPUT_DIR / "gmfcs_vs_duration.png"
-        plt.savefig(out, dpi=150)
+        plt.savefig(out, dpi=300, bbox_inches="tight")
         plt.close()
         print(f"Saved: {out}")
 
@@ -479,7 +507,7 @@ def plot_residuals(df: pd.DataFrame) -> None:
     ax.set_xlabel("Pearson correlation")
     plt.tight_layout()
     out = OUTPUT_DIR / "residual_correlations.png"
-    plt.savefig(out, dpi=150)
+    plt.savefig(out, dpi=300, bbox_inches="tight")
     plt.close()
     print(f"Saved: {out}")
 
@@ -490,7 +518,7 @@ def plot_residuals(df: pd.DataFrame) -> None:
     df["residual"].plot(kind="hist", bins=20, ax=ax, edgecolor="black", color="#3498db")
     ax.axvline(0, color="red", linestyle="--", linewidth=1.5, label="On time")
     ax.set_xlabel("Actual age − Predicted age (age buckets)")
-    ax.set_title("Distribution of residuals")
+    ax.set_title("Distribution of Residuals")
     ax.legend()
 
     # ── use first available training feature instead of hardcoded name ───────
@@ -502,13 +530,14 @@ def plot_residuals(df: pd.DataFrame) -> None:
                    medianprops=dict(color="#e74c3c"))
         ax.set_xticklabels(["Later than predicted\n(residual ≥ 0)",
                              "Earlier than predicted\n(residual < 0)"])
-        ax.set_title(f"{col} by achievement group")
+        col_label = FEATURE_LABELS.get(col, col.replace("_", " ").title())
+        ax.set_title(f"{col_label} by Achievement Group")
         ax.set_xlabel("")
         plt.suptitle("")
 
     plt.tight_layout()
     out = OUTPUT_DIR / "early_vs_late.png"
-    plt.savefig(out, dpi=150)
+    plt.savefig(out, dpi=300, bbox_inches="tight")
     plt.close()
     print(f"Saved: {out}")
 

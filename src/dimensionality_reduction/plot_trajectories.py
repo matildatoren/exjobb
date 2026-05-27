@@ -18,6 +18,15 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+plt.rcParams.update({
+    "font.size":        13,
+    "axes.titlesize":   14,
+    "axes.labelsize":   13,
+    "xtick.labelsize":  11,
+    "ytick.labelsize":  11,
+    "legend.fontsize":  11,
+})
+
 SRC = Path(__file__).resolve().parent / "src"
 sys.path.append(str(SRC))
 
@@ -35,48 +44,55 @@ FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 # ════════════════════════════════════════════════════════════════════════════
 
 GROUP_A = [
-"c0990a55-916e-47ba-b29a-aee83d9f33c9",
-        "65ab3206-7371-4471-845c-6d238050494f",
-        "c8f4ec50-18b6-47ed-92a3-919da180a10d",
-        "8dba1f55-9e79-4e62-90c3-02e9609d3feb",
-        "f1856ef8-2fe0-480d-9635-cfc0be308458",
-        "0a584ba1-cdf4-4251-9168-5f8ccc0240e3",
-        "7e42b31a-c597-4418-9bf6-a8c3286d049f",
-        "89e4bf27-9a6f-45e8-a415-ef53f23f7931",
-        "16f3f961-07a2-4099-8498-1bad9c2faa19",
-        "44cd783c-b33d-4553-89cd-2a73b59e1982",
-        "cd26a009-6e51-4372-b151-b7d2bb8b7183",
-        "30302f7a-c470-47bf-8f0e-d104b3065d99",
-        "1950325f-99da-47b4-b49d-735253ba0aaa",
-        "42475b28-2dfd-4114-ac53-d8619881dd2f",
-        "7e68f3b3-509b-4352-8eb1-400c9407ac9b",
-        
+    "e0129e7b-c90f-4f49-87d3-6987eb577cdb",
+    "fcdc7e60-1c2f-4178-bafd-db1d42e869ee",
+    "498a4d90-77c6-41b2-ad39-517a2c2a9702",
+    "f1856ef8-2fe0-480d-9635-cfc0be308458",
+    "4c89ca0a-f5c3-4b7b-96be-a7919c679303",
+    "c0990a55-916e-47ba-b29a-aee83d9f33c9",
+    "52dac13b-a335-449d-a7db-a58e40b5e213",
+    "578adb11-a12f-4121-a567-afe67c25640b",
+    "ee9e6fc1-a9d3-4f45-aa0e-01723ebb2930",
+    "6e7aeec2-2846-433d-a4ac-0e753da08530",
+    "47a9e4ae-8d91-4070-ae18-f2d9af891299",
+    "1d0afd8d-6945-488a-964c-724e95db6696",
+    "d2703a20-7b4a-4624-b31a-306eebe4caa0",
+    "f9231c8d-2ade-4c0e-a878-a9524ccc3d65",
+    "1019fb0a-480d-4bef-b8f9-493b9dfe253b",
+    "d87153c9-75b3-4305-99a4-42abc0366651",
+    "cd26a009-6e51-4372-b151-b7d2bb8b7183",
+    "3c1f5e61-56fd-4ac3-af9e-0d6fe054ddb7",
+    "42475b28-2dfd-4114-ac53-d8619881dd2f",
+    "44cd783c-b33d-4553-89cd-2a73b59e1982",
+    "c8f4ec50-18b6-47ed-92a3-919da180a10d",
+    "16f3f961-07a2-4099-8498-1bad9c2faa19",
+    "30302f7a-c470-47bf-8f0e-d104b3065d99",
 ]
 
 GROUP_B = [
-    "ee9e6fc1-a9d3-4f45-aa0e-01723ebb2930",
+    "1950325f-99da-47b4-b49d-735253ba0aaa",
+    "89e4bf27-9a6f-45e8-a415-ef53f23f7931",
+    "7e68f3b3-509b-4352-8eb1-400c9407ac9b",
+    "7e42b31a-c597-4418-9bf6-a8c3286d049f",
+    "65ab3206-7371-4471-845c-6d238050494f",
     "771d12c3-bc1a-4a97-ad27-00d35b24f87e",
-    "1019fb0a-480d-4bef-b8f9-493b9dfe253b",
-    "6e7aeec2-2846-433d-a4ac-0e753da08530",
-    "e30d335e-3a7a-484d-951d-f8e3f17ccfb3",
+    "8dba1f55-9e79-4e62-90c3-02e9609d3feb",
     "4be3b41c-a0b4-4e7b-ae49-896b37ea2052",
-    "1d0afd8d-6945-488a-964c-724e95db6696",
-    "578adb11-a12f-4121-a567-afe67c25640b",
+    "e30d335e-3a7a-484d-951d-f8e3f17ccfb3",
     "df67e7ea-0b50-408b-9342-4c29d0efa839",
-    "d2703a20-7b4a-4624-b31a-306eebe4caa0",
-    "f9231c8d-2ade-4c0e-a878-a9524ccc3d65",
-    "52dac13b-a335-449d-a7db-a58e40b5e213",
-    
+    "0a584ba1-cdf4-4251-9168-5f8ccc0240e3",
+
 ]
 
 GROUP_C = [
-        "4c89ca0a-f5c3-4b7b-96be-a7919c679303",
+
 ]
 
 # ────────────────────────────────────────────────────────────────────────────
 
-SCORE_COL = "delta_combined_score"
-GMFCS_COL = "gmfcs_int"
+SCORE_COL   = "combined_score_setvalue"
+SCORE_LABEL = "Average Score"
+GMFCS_COL   = "gmfcs_int"
 
 # Border colors used in combined plot to distinguish groups
 COLOR_A = "#2948b9"   # blue
@@ -173,9 +189,9 @@ def _draw_panel(ax, pid, group, all_ages, y_min, y_max,
 
     ax.axhline(0, color="lightgray", linewidth=0.8, linestyle=":")
     ax.set_xticks(all_ages)
-    ax.set_xticklabels([f"Year {a}" for a in all_ages], fontsize=8)
+    ax.set_xticklabels([f"Year {a}" for a in all_ages])
     ax.set_ylim(y_min, y_max)
-    ax.set_ylabel(SCORE_COL.replace("_", " ").title(), fontsize=8)
+    ax.set_ylabel(SCORE_LABEL)
 
     if border_color:
         for spine in ax.spines.values():
@@ -187,7 +203,7 @@ def _draw_panel(ax, pid, group, all_ages, y_min, y_max,
         ax.spines["right"].set_visible(False)
 
     if title:
-        ax.set_title(title, fontsize=9)
+        ax.set_title(title)
 
 
 def _gmfcs_legend_elements(df: pd.DataFrame) -> list:
@@ -229,7 +245,7 @@ def plot_individual_trajectories(
         color = GMFCS_COLORS.get(int(gmfcs), "#555555") if pd.notna(gmfcs) else "#555555"
         gmfcs_label = f"  GMFCS {int(gmfcs)}" if pd.notna(gmfcs) else ""
         _draw_panel(ax, pid, group, all_ages, y_min, y_max,
-                    line_color=color, title=f"{pid[:8]}…{gmfcs_label}")
+                    line_color=color, title=gmfcs_label.strip())
 
     for j in range(n, n_rows * n_cols):
         axes[j // n_cols][j % n_cols].set_visible(False)
@@ -237,15 +253,15 @@ def plot_individual_trajectories(
     legend_elements = _gmfcs_legend_elements(df)
     if legend_elements:
         fig.legend(handles=legend_elements, loc="lower center",
-                   ncol=len(legend_elements), fontsize=10,
+                   ncol=len(legend_elements),
                    title="GMFCS level", bbox_to_anchor=(0.5, 0))
         plt.subplots_adjust(bottom=0.08)
 
     fig.suptitle(f"Individual Trajectories — {group_label}  (n={n})",
-                 fontsize=14, y=1.01)
+                 fontsize=18, y=1.01)
     plt.tight_layout()
     path = FIGURES_DIR / filename
-    plt.savefig(path, dpi=150, bbox_inches="tight")
+    plt.savefig(path, dpi=300, bbox_inches="tight")
     print(f"  Saved: {path.name}")
     plt.show()
 
@@ -288,11 +304,12 @@ def plot_combined_groups(
         color = GMFCS_COLORS.get(int(gmfcs), "#555555") if pd.notna(gmfcs) else "#555555"
         gmfcs_label = f"  GMFCS {int(gmfcs)}" if pd.notna(gmfcs) else ""
         tag   = group_tag_map.get(pid, "")
+        short_id = str(pid)[:8]
         _draw_panel(
             ax, pid, group, all_ages, y_min, y_max,
             line_color=color,
             border_color=border_map.get(pid),
-            title=f"{tag} {pid[:8]}…{gmfcs_label}"
+            title=f"{tag} {gmfcs_label.strip()} [{short_id}]".strip()
         )
 
     for j in range(n, n_rows * n_cols):
@@ -308,18 +325,17 @@ def plot_combined_groups(
         handles=gmfcs_elements + group_elements,
         loc="lower center",
         ncol=len(gmfcs_elements) + 2,
-        fontsize=9,
         bbox_to_anchor=(0.5, 0)
     )
     plt.subplots_adjust(bottom=0.06)
 
     fig.suptitle(
-        f"All Trajectories — {label_a} (blue) · {label_b} (orange)  (n={n})",
-        fontsize=13, y=1.01,
+        f"All Trajectories — {label_a} (blue) · {label_b} (red)  (n={n})",
+        fontsize=18, y=1.01,
     )
     plt.tight_layout()
     path = FIGURES_DIR / filename
-    plt.savefig(path, dpi=150, bbox_inches="tight")
+    plt.savefig(path, dpi=300, bbox_inches="tight")
     print(f"  Saved: {path.name}")
     plt.show()
 
@@ -369,17 +385,17 @@ def plot_group_averages(
 
     ax.axhline(0, color="lightgray", linewidth=0.8, linestyle=":")
     ax.set_xticks(all_ages)
-    ax.set_xticklabels([f"Year {a}" for a in all_ages], fontsize=11)
-    ax.set_ylabel(SCORE_COL.replace("_", " ").title(), fontsize=12)
+    ax.set_xticklabels([f"Year {a}" for a in all_ages])
+    ax.set_ylabel(SCORE_LABEL)
     ax.set_ylim(y_min, y_max)
-    ax.set_title(f"Group Average Trajectories: {label_a} · {label_b}", fontsize=13)
-    ax.legend(fontsize=9)
+    ax.set_title(f"Group Average Trajectories: {label_a} vs {label_b}", fontsize=16)
+    ax.legend()
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
 
     plt.tight_layout()
     path = FIGURES_DIR / filename
-    plt.savefig(path, dpi=150, bbox_inches="tight")
+    plt.savefig(path, dpi=300, bbox_inches="tight")
     print(f"  Saved: {path.name}")
     plt.show()
 
