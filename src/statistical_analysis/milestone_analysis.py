@@ -66,7 +66,7 @@ from src.preprocessing.master_preprocessing import build_master_feature_table
 from src.connect_db import get_connection
 from src.dataloader import load_data
 
-OUTPUT_DIR = Path(__file__).resolve().parents[1] / "outputs" / "milestone_analysis"
+OUTPUT_DIR = Path(__file__).resolve().parents[2] / "outputs" / "milestone_analysis"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
