@@ -52,11 +52,11 @@ FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 # ════════════════════════════════════════════════════════════════════════════
 
 INCLUDE_IDS: list[str] | None = [
-    "e0129e7b-c90f-4f49-87d3-6987eb577cdb",
-    "d87153c9-75b3-4305-99a4-42abc0366651",
-    "47a9e4ae-8d91-4070-ae18-f2d9af891299",
-    "1950325f-99da-47b4-b49d-735253ba0aaa",
-    "ee9e6fc1-a9d3-4f45-aa0e-01723ebb2930",
+    # "e0129e7b-c90f-4f49-87d3-6987eb577cdb",
+    # "d87153c9-75b3-4305-99a4-42abc0366651",
+    # "47a9e4ae-8d91-4070-ae18-f2d9af891299",
+    # "1950325f-99da-47b4-b49d-735253ba0aaa",
+    # "ee9e6fc1-a9d3-4f45-aa0e-01723ebb2930",
 
     "498a4d90-77c6-41b2-ad39-517a2c2a9702",
     "52dac13b-a335-449d-a7db-a58e40b5e213",
@@ -190,9 +190,9 @@ def build_analysis_dataset(data: dict[str, pl.DataFrame]) -> pd.DataFrame:
 # 2. Beskrivande statistik
 # ════════════════════════════════════════════════════════════════════════════
 SCORE_COLS = {
-    "milestone_score_setvalue":    "Milestone score (normalized)",
-    "impairment_score_setvalue":   "Impairment score (normalized)",
-    "combined_score_setvalue":     "Combined score (normalized)",
+    "milestone_score_setvalue":    "Milestone score (normalised)",
+    "impairment_score_setvalue":   "Impairment score (normalised)",
+    "combined_score_setvalue":     "Combined score (normalised)",
     "milestone_score":             "Milestone score (age-relative)",
     "impairment_score":            "Impairment score (age-relative)",
     "combined_score":              "Combined score (age-relative)",
@@ -335,7 +335,7 @@ def print_summary(df: pd.DataFrame) -> None:
     col_filter = "combined_score_setvalue"
     age_sub = age_stats[age_stats["Score_col"] == col_filter]
     if not age_sub.empty:
-        print(f"  {'Ålder':>6}  {'Grupp':>22}  {'n':>5}  {'Medel':>8}  {'SE':>7}")
+        print(f"  {'Ålder':>6}  {'Grupp':>22}  {'n':>5}  {'Medel':>8}  {'SD':>7}")
         print(f"  {line}")
         for _, row in age_sub.sort_values(["age", "Grupp"]).iterrows():
             print(
@@ -361,8 +361,8 @@ def plot_boxplots(df: pd.DataFrame) -> None:
     Box plots: distribution av varje motorisk score per grupp.
     """
     score_pairs = [
-        ("milestone_score_setvalue",  "Milestone score\n(normalized)"),
-        ("impairment_score_setvalue", "Impairment score\n(normalized)"),
+        ("milestone_score_setvalue",  "Milestone score\n(normalised)"),
+        ("impairment_score_setvalue", "Impairment score\n(normalised)"),
     ]
     score_pairs = [(c, l) for c, l in score_pairs if c in df.columns]
 
@@ -416,13 +416,13 @@ def plot_score_by_age(df: pd.DataFrame) -> None:
     Linjediagram: medelscores per åldersgrupp, uppdelat på grupp.
     """
     score_pairs = [
-        ("milestone_score_setvalue",  "Milestone score (normalized)"),
-        ("impairment_score_setvalue", "Impairment score (normalized)"),
+        ("milestone_score_setvalue",  "Milestone score (normalised)"),
+        ("impairment_score_setvalue", "Impairment score (normalised)"),
     ]
     score_pairs = [(c, l) for c, l in score_pairs if c in df.columns]
 
     fig, axes = plt.subplots(
-        2, 2, figsize=(14, 10), sharex=True
+        2, 2, figsize=(14, 10)
     )
     axes = axes.flatten()
 
@@ -456,7 +456,7 @@ def plot_score_by_age(df: pd.DataFrame) -> None:
 
         ax.set_title(label)
         ax.set_xlabel("Age (years)")
-        ax.set_ylabel("Mean score (±SE)")
+        ax.set_ylabel("Mean score (±SD)")
         ax.set_xticks(ages)
         ax.legend()
         ax.grid(axis="y", alpha=0.3)
