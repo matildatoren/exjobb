@@ -52,6 +52,7 @@ FEATURE_LABELS = {
 
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.linear_model import LogisticRegression, RidgeCV
+from sklearn.metrics import roc_auc_score, roc_curve
 from sklearn.model_selection import cross_val_predict, cross_val_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -601,6 +602,23 @@ def run_logistic(df: pd.DataFrame) -> None:
     scores = cross_val_score(pipe, X, y, cv=cv, scoring="roc_auc")
     print(f"\n── Logistic regression (early vs late achiever) ──────────────")
     print(f"  Cross-validated AUC: {scores.mean():.2f} ± {scores.std():.2f}")
+
+    # ROC curve using cross-validated probabilities
+    y_prob_cv = cross_val_predict(pipe, X, y, cv=cv, method="predict_proba")[:, 1]
+    fpr, tpr, _ = roc_curve(y, y_prob_cv)
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+    ax.plot(fpr, tpr, color="#2c7bb6", lw=2, label=f"ROC curve (AUC = {scores.mean():.2f} ± {scores.std():.2f})")
+    ax.plot([0, 1], [0, 1], "k--", lw=1, label="Chance")
+    ax.set_xlabel("False Positive Rate")
+    ax.set_ylabel("True Positive Rate")
+    ax.set_title("ROC Curve — Early vs Late Milestone Achiever\n(cross-validated probabilities)")
+    ax.legend(loc="lower right")
+    plt.tight_layout()
+    out_roc = OUTPUT_DIR / "roc_curve.png"
+    plt.savefig(out_roc, dpi=300, bbox_inches="tight")
+    plt.close()
+    print(f"Saved: {out_roc}")
 
     pipe.fit(X, y)
     coef_df = (

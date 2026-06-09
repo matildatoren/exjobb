@@ -120,7 +120,7 @@ def prepare_trajectories(master) -> pd.DataFrame:
     df = df.dropna(subset=[SCORE_COL])
 
     counts    = df.groupby("introductory_id")[SCORE_COL].count()
-    valid_ids = counts[counts >= 2].index
+    valid_ids = counts[counts >= 1].index
     df        = df[df["introductory_id"].isin(valid_ids)]
 
     print(f"  Total participants with ≥2 time points: {df['introductory_id'].nunique()}")
